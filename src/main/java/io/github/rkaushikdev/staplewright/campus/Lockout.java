@@ -4,6 +4,7 @@ import io.github.rkaushikdev.staplewright.ConflictError;
 import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.InputError;
 import io.github.rkaushikdev.staplewright.util.Text;
+import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -85,8 +86,14 @@ public record Lockout(
         return state.isOpen();
     }
 
-    /** Whether the telephone rang at or after five in the evening, or before seven in the morning. */
+    /**
+     * Whether the telephone rang outside the working day: at or after five in the evening, before
+     * seven in the morning, or at any hour of a Saturday or a Sunday, when whoever goes is on call.
+     */
     public boolean afterHours() {
+        if (calledAt.getDayOfWeek() == DayOfWeek.SATURDAY || calledAt.getDayOfWeek() == DayOfWeek.SUNDAY) {
+            return true;
+        }
         LocalTime struck = calledAt.toLocalTime();
         return !struck.isBefore(AFTER_HOURS_START) || struck.isBefore(AFTER_HOURS_END);
     }

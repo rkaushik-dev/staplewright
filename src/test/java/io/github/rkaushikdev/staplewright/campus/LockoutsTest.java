@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.github.rkaushikdev.staplewright.ConflictError;
 import io.github.rkaushikdev.staplewright.InputError;
 import io.github.rkaushikdev.staplewright.NotFoundError;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -212,6 +213,48 @@ class LockoutsTest {
         log.log(aCall("L-004", call -> call.keyholder("dsalo")));
         assertThat(log.repeatCallers()).containsExactly("kmaki");
         assertThat(log.repeatCallers(1)).containsExactly("dsalo", "kmaki");
+    }
+
+    @Test
+    void repeatCallsAreCountedFromTheStartOfTheTerm() {
+        LockoutLog log = aLog();
+        log.log(aCall("L-002", call -> call.calledAt(LocalDateTime.of(2025, 9, 3, 9, 0))));
+        log.log(aCall("L-003", call -> call.calledAt(LocalDateTime.of(2025, 9, 20, 9, 0))));
+        log.log(aCall("L-004", call -> call.keyholder("dsalo").calledAt(LocalDateTime.of(2025, 9, 1, 0, 0))));
+        log.log(aCall("L-005", call -> call.keyholder("dsalo").calledAt(LocalDateTime.of(2025, 10, 1, 8, 0))));
+        LocalDate term = LocalDate.of(2025, 9, 1);
+        assertThat(log.repeatCallers()).containsExactly("kmaki");
+        assertThat(log.repeatCallers(3, term)).isEmpty();
+        assertThat(log.repeatCallers(2, term)).containsExactly("dsalo", "kmaki");
+        assertThat(log.repeatCallers(2, LocalDate.of(2025, 9, 2))).containsExactly("kmaki");
+    }
+
+    @Test
+    void theDoorsAreCountedFromADayToo() {
+        LockoutLog log = aLog();
+        log.log(aCall("L-002"));
+        log.log(aCall("L-003", call -> call.opening("MOO-216").calledAt(LocalDateTime.of(2025, 9, 3, 9, 0))));
+        Map<String, Integer> autumn = log.countsByOpening(LocalDate.of(2025, 9, 1));
+        assertThat(autumn).containsExactly(Map.entry("MOO-216", 1));
+        assertThat(log.countsByOpening(LocalDate.of(2025, 4, 8))).containsEntry("MOO-214", 2);
+        assertThat(log.countsByOpening(LocalDate.of(2026, 1, 1))).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {12, 13})
+    void aWeekendCallIsAfterHoursAtAnyHour(int day) {
+        Lockout midday = aCall(item -> item.calledAt(LocalDateTime.of(2025, 4, day, 12, 0)));
+        assertThat(midday.afterHours()).isTrue();
+    }
+
+    @Test
+    void aWeekdayMiddayCallIsStillInHours() {
+        assertThat(aCall(item -> item.calledAt(LocalDateTime.of(2025, 4, 11, 12, 0)))
+                        .afterHours())
+                .isFalse();
+        assertThat(aCall(item -> item.calledAt(LocalDateTime.of(2025, 4, 14, 7, 0)))
+                        .afterHours())
+                .isFalse();
     }
 
     @Test

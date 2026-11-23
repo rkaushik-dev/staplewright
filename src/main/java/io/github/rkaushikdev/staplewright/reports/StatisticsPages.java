@@ -113,11 +113,18 @@ public final class StatisticsPages {
 
     /** Doors generating calls, worst first, with the room for the meeting where the door is on record. */
     public static List<Tally> lockoutPressure(LockoutLog log, OpeningSchedule openings) {
-        List<Tally> found = new ArrayList<>();
-        for (Map.Entry<String, Integer> entry : log.countsByOpening().entrySet()) {
-            found.add(new Tally(labelOf(openings, entry.getKey()), entry.getValue()));
-        }
-        return List.copyOf(found);
+        return pressure(log.countsByOpening(), openings);
+    }
+
+    /** Doors generating the calls made on or after a day, worst first, for the term's budget meeting. */
+    public static List<Tally> lockoutPressure(LockoutLog log, OpeningSchedule openings, LocalDate since) {
+        return pressure(log.countsByOpening(since), openings);
+    }
+
+    private static List<Tally> pressure(Map<String, Integer> counts, OpeningSchedule openings) {
+        return counts.entrySet().stream()
+                .map(entry -> new Tally(labelOf(openings, entry.getKey()), entry.getValue()))
+                .toList();
     }
 
     /** The building and room of an opening, or its number when nobody has a record of it. */

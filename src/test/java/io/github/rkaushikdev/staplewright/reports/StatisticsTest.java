@@ -131,6 +131,16 @@ class StatisticsTest {
     }
 
     @Test
+    void theTermsLockoutPressureLeavesOutTheCallsBeforeIt() {
+        LockoutLog log = aLog();
+        log.log(new Lockout("L-010", "ZZZ-1", "kmaki", LocalDateTime.of(2025, 9, 4, 10, 0)));
+        assertThat(StatisticsPages.lockoutPressure(log, aCampus(), LocalDate.of(2025, 9, 1)))
+                .containsExactly(new Tally("ZZZ-1", 1));
+        assertThat(StatisticsPages.lockoutPressure(log, aCampus(), LocalDate.of(2025, 1, 1)))
+                .isEqualTo(StatisticsPages.lockoutPressure(log, aCampus()));
+    }
+
+    @Test
     void aDoorNobodyHasARecordOfKeepsItsNumber() {
         LockoutLog log = new LockoutLog();
         log.log(new Lockout("L-009", "ZZZ-1", "kmaki", CALLED));

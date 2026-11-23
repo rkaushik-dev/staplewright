@@ -7,9 +7,9 @@ import io.github.rkaushikdev.staplewright.Lifecycle;
 import io.github.rkaushikdev.staplewright.Registry;
 import io.github.rkaushikdev.staplewright.util.Tallies;
 import io.github.rkaushikdev.staplewright.util.Text;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -165,6 +165,14 @@ public final class LockoutLog implements Iterable<Lockout> {
         return Tallies.count(calls.values(), Lockout::opening);
     }
 
+    /**
+     * Which doors generated the calls made on or after a day, worst first and a tie in number
+     * order. A door that was fixed in the summer should stop showing up in the autumn's report.
+     */
+    public Map<String, Integer> countsByOpening(LocalDate since) {
+        return Tallies.count(callsSince(since), Lockout::opening);
+    }
+
     /** The people who have called three times or more, in identifier order. */
     public List<String> repeatCallers() {
         return repeatCallers(REPEAT_CALLS);
@@ -172,15 +180,27 @@ public final class LockoutLog implements Iterable<Lockout> {
 
     /** The people who have called at least {@code atLeast} times, in identifier order. */
     public List<String> repeatCallers(int atLeast) {
-        Map<String, Integer> counts = new LinkedHashMap<>();
-        for (Lockout call : calls) {
-            counts.merge(call.keyholder(), 1, Integer::sum);
-        }
-        return counts.entrySet().stream()
+        return repeatCallers(atLeast, LocalDate.MIN);
+    }
+
+    /**
+     * The people who have called at least {@code atLeast} times on or after a day, in identifier
+     * order.
+     *
+     * <p>The repeat caller rule is about a habit, and three calls across four years is not one. The
+     * shop counts over the term, so a student locked out twice in first year and once in final year
+     * is not sent the letter.
+     */
+    public List<String> repeatCallers(int atLeast, LocalDate since) {
+        return Tallies.count(callsSince(since), Lockout::keyholder).entrySet().stream()
                 .filter(entry -> entry.getValue() >= atLeast)
                 .map(Map.Entry::getKey)
                 .sorted()
                 .toList();
+    }
+
+    private List<Lockout> callsSince(LocalDate since) {
+        return calls.where(call -> !call.calledAt().toLocalDate().isBefore(since));
     }
 
     /** Mean whole minutes to attend, across the calls anybody has attended, or nothing when none. */
