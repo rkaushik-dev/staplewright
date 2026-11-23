@@ -5,6 +5,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.rkaushikdev.staplewright.BittingError;
 import io.github.rkaushikdev.staplewright.InputError;
+import io.github.rkaushikdev.staplewright.keys.Bitting;
+import io.github.rkaushikdev.staplewright.keys.Calibration;
+import io.github.rkaushikdev.staplewright.keys.CutCard;
+import io.github.rkaushikdev.staplewright.keys.CutInstruction;
+import io.github.rkaushikdev.staplewright.keys.Machines;
 import io.github.rkaushikdev.staplewright.support.Charts;
 import java.util.Comparator;
 import java.util.List;
@@ -171,6 +176,46 @@ class GaugingTest {
     @ValueSource(ints = {0, 7, -1})
     void aChamberOffTheEndIsRefused(int chamber) {
         assertThatThrownBy(() -> Gauging.positionOf(Charts.sixPinChart(), chamber, aBlade()))
+                .isInstanceOf(BittingError.class);
+    }
+
+    @Test
+    void aTipGaugedFamilyMovesEveryCutWithALongBlank() {
+        DepthAndSpaceChart chart = tipGauged();
+        assertThat(Gauging.positionsFor(chart, aBlade(1406)))
+                .isEqualTo(chart.spaces().stream().map(space -> space + 6).toList());
+        assertThat(Gauging.positionOf(chart, 6, aBlade(1392))).isEqualTo(1011 - 8);
+    }
+
+    @Test
+    void aShortBlankOnATipGaugedFamilyRunsTheFirstCutIntoTheShoulder() {
+        List<String> found = Gauging.checkBlade(tipGauged(), aBlade(1160, 1400));
+        assertThat(found.get(0))
+                .isEqualTo("LC-6 is too short for C keyway, six pin, the cut against the shoulder would sit at -9");
+        assertThat(Gauging.bladeLongEnough(tipGauged(), aBlade(1160, 1400))).isFalse();
+        assertThat(Gauging.bladeLongEnough(tipGauged(), aBlade(1180, 1400))).isTrue();
+    }
+
+    @Test
+    void aTipGaugedCardSetsTheCarriageOffTheBlankInTheJaw() {
+        DepthAndSpaceChart chart = tipGauged();
+        CutCard card = Machines.cutCard(chart, Bitting.parse("342156"), Calibration.TRUE, aBlade(1403));
+        assertThat(card.instructions().stream().map(CutInstruction::spaceMils).toList())
+                .isEqualTo(chart.spaces().stream().map(space -> space + 3).toList());
+        CutCard shoulder =
+                Machines.cutCard(Charts.sixPinChart(), Bitting.parse("342156"), Calibration.TRUE, aBlade(1403));
+        assertThat(shoulder).isEqualTo(Machines.cutCard(Charts.sixPinChart(), Bitting.parse("342156")));
+    }
+
+    @Test
+    void aBlankTheChartCannotBeCutOnGetsNoCard() {
+        assertThatThrownBy(() -> Machines.cutCard(tipGauged(), Bitting.parse("342156"), Calibration.TRUE, aBlade(1412)))
+                .isInstanceOf(BittingError.class)
+                .satisfies(refused -> assertThat(((BittingError) refused).facts())
+                        .containsEntry("part", "LC-6")
+                        .containsKey("reasons"));
+        assertThatThrownBy(() ->
+                        Machines.cutCard(Charts.sixPinChart(), Bitting.parse("342156"), Calibration.TRUE, aBlade(1040)))
                 .isInstanceOf(BittingError.class);
     }
 }

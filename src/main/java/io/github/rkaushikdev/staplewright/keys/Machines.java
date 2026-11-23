@@ -3,7 +3,9 @@ package io.github.rkaushikdev.staplewright.keys;
 import io.github.rkaushikdev.staplewright.BittingError;
 import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.InputError;
+import io.github.rkaushikdev.staplewright.spec.Blade;
 import io.github.rkaushikdev.staplewright.spec.DepthAndSpaceChart;
+import io.github.rkaushikdev.staplewright.spec.Gauging;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -39,12 +41,38 @@ public final class Machines {
      * @throws BittingError for a key the chart cannot cut
      */
     public static CutCard cutCard(DepthAndSpaceChart chart, Bitting bitting, Calibration calibration) {
+        return card(chart, bitting, calibration, chart.spaces());
+    }
+
+    /**
+     * Everything the code machine needs to cut one key on the blank in the jaw.
+     *
+     * <p>A tip gauged family moves its cuts with the length of the blank, so the carriage positions
+     * come off the blank rather than off the chart. A blank too short to leave metal past the tip
+     * cut, or too far off nominal for a tip gauged family, gets no card: it would come out looking
+     * right and turn nothing.
+     *
+     * @throws BittingError for a key the chart cannot cut, or a blank the chart cannot be cut on,
+     *     with every reason the blank is wrong
+     */
+    public static CutCard cutCard(DepthAndSpaceChart chart, Bitting bitting, Calibration calibration, Blade blade) {
+        List<String> problems = Gauging.checkBlade(chart, blade);
+        if (!problems.isEmpty()) {
+            throw new BittingError(
+                    "that blank cannot be cut on this chart",
+                    Facts.of("part", blade.partNumber(), "family", chart.family(), "reasons", problems));
+        }
+        return card(chart, bitting, calibration, Gauging.positionsFor(chart, blade));
+    }
+
+    private static CutCard card(
+            DepthAndSpaceChart chart, Bitting bitting, Calibration calibration, List<Integer> positions) {
         chart.validate(bitting);
         List<CutInstruction> instructions = IntStream.rangeClosed(1, chart.chambers())
                 .mapToObj(chamber -> new CutInstruction(
                         chamber,
                         bitting.at(chamber),
-                        chart.spaceFor(chamber) + calibration.spaceOffsetMils(),
+                        positions.get(chamber - 1) + calibration.spaceOffsetMils(),
                         chart.dimensionFor(bitting.at(chamber)) + calibration.depthOffsetMils()))
                 .toList();
         return new CutCard(chart.family(), bitting, instructions, calibration);

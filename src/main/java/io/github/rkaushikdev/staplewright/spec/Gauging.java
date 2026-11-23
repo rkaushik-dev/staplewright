@@ -53,12 +53,17 @@ public final class Gauging {
         return positions.stream().map(position -> blade.lengthMils() - position).toList();
     }
 
-    /** Where the machine goes, given which end this family gauges from. */
+    /**
+     * Where the machine goes on this blank, measured from the shoulder, given which end this family
+     * gauges from.
+     *
+     * <p>A tip gauged chart prints its spaces for a blank of nominal length. Gauged off the tip of a
+     * blank that is long, every cut sits that much further from the shoulder, so the positions move
+     * by the blank's error. A shoulder gauged chart is where it says whatever the blank does.
+     */
     public static List<Integer> positionsFor(DepthAndSpaceChart chart, Blade blade) {
-        if (!chart.gaugedFromTip()) {
-            return shoulderPositions(chart);
-        }
-        return fromTipToShoulder(blade, tipPositions(chart, blade));
+        int drift = driftOn(chart, blade);
+        return shoulderPositions(chart).stream().map(space -> space + drift).toList();
     }
 
     /**
@@ -68,10 +73,7 @@ public final class Gauging {
      * shops prefer shoulder gauging.
      */
     public static int driftOn(DepthAndSpaceChart chart, Blade blade) {
-        if (!chart.gaugedFromTip()) {
-            return 0;
-        }
-        return blade.errorMils();
+        return chart.gaugedFromTip() ? blade.errorMils() : 0;
     }
 
     /** Whether this blank can be cut on this chart without moving the cuts, at the usual allowance. */
@@ -96,9 +98,14 @@ public final class Gauging {
         return bladeLongEnough(chart, blade, CLEARANCE_MILS);
     }
 
-    /** Whether the last chamber leaves this much metal between it and the tip. */
+    /**
+     * Whether the last chamber leaves this much metal between it and the tip, and the first cut
+     * still lands on the blade. A tip gauged family on a short blank keeps its clearance at the tip
+     * and runs its first cut into the shoulder instead.
+     */
     public static boolean bladeLongEnough(DepthAndSpaceChart chart, Blade blade, int clearanceMils) {
-        return blade.lengthMils() - lastPosition(chart) >= clearanceMils;
+        return positionsFor(chart, blade).get(0) > 0
+                && blade.lengthMils() - lastPosition(chart, blade) >= clearanceMils;
     }
 
     /** Every reason this blank is wrong for this chart, at the usual allowance, in reading order. */
@@ -109,9 +116,13 @@ public final class Gauging {
     /** Every reason this blank is wrong for this chart, in reading order. Empty for a good blank. */
     public static List<String> checkBlade(DepthAndSpaceChart chart, Blade blade, int allowanceMils) {
         List<String> found = new ArrayList<>();
-        if (!bladeLongEnough(chart, blade)) {
+        int first = positionsFor(chart, blade).get(0);
+        if (first <= 0) {
+            found.add(blade.partNumber() + " is too short for " + chart.family()
+                    + ", the cut against the shoulder would sit at " + first);
+        } else if (!bladeLongEnough(chart, blade)) {
             found.add(blade.partNumber() + " is too short for " + chart.family() + ", the tip cut sits at "
-                    + lastPosition(chart));
+                    + lastPosition(chart, blade));
         }
         if (!withinTolerance(chart, blade, allowanceMils)) {
             found.add(blade.partNumber() + " is " + blade.errorMils() + " off nominal and " + chart.family()
@@ -133,8 +144,7 @@ public final class Gauging {
         return positionsFor(chart, blade).get(chamber - 1);
     }
 
-    private static int lastPosition(DepthAndSpaceChart chart) {
-        List<Integer> positions = shoulderPositions(chart);
-        return positions.get(positions.size() - 1);
+    private static int lastPosition(DepthAndSpaceChart chart, Blade blade) {
+        return positionsFor(chart, blade).get(chart.chambers() - 1);
     }
 }
