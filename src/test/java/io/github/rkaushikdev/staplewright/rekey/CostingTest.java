@@ -136,7 +136,10 @@ class CostingTest {
     void aDifferentRateCardMovesTheNumber() {
         Decided found = decisionFor("AA1", "41207");
         Estimate cheap = Estimate.of(
-                found.decision(), found.coverage(), List.of("41208"), new RateCard().withLabourCentsPerHour(2600));
+                found.decision(),
+                found.coverage(),
+                List.of("41208"),
+                new RateCard().toBuilder().labourCentsPerHour(2600).build());
         Estimate dear = Estimate.of(found.decision(), found.coverage(), List.of("41208"), RateCard.DEFAULT);
         assertThat(cheap.labourCents()).isLessThan(dear.labourCents());
         assertThat(cheap.partsCents()).isEqualTo(dear.partsCents());
@@ -167,14 +170,65 @@ class CostingTest {
 
     static Stream<UnaryOperator<RateCard>> aRateCardThatMakesNoSenseIsRefused() {
         return Stream.of(
-                rates -> rates.withBenchMinutesPerCylinder(-1),
-                rates -> rates.withLabourCentsPerHour(0),
-                rates -> rates.withBlankCents(-5));
+                rates -> rates.toBuilder().benchMinutesPerCylinder(-1).build(),
+                rates -> rates.toBuilder().labourCentsPerHour(0).build(),
+                rates -> rates.toBuilder().blankCents(-5).build(),
+                rates -> rates.toBuilder().afterHoursPercent(99).build());
     }
 
     @ParameterizedTest
     @MethodSource
     void aRateCardThatMakesNoSenseIsRefused(UnaryOperator<RateCard> broken) {
         assertThatThrownBy(() -> broken.apply(new RateCard())).isInstanceOf(InputError.class);
+    }
+
+    @Test
+    void afterHoursTheDoorAndTheDriveCostMoreAndTheBenchDoesNot() {
+        Decided found = decisionFor("AA1", "41207");
+        Estimate day = Estimate.of(found.decision(), found.coverage(), List.of("41208"), RateCard.DEFAULT);
+        Estimate night = Estimate.of(found.decision(), found.coverage(), List.of("41208"), RateCard.DEFAULT, true);
+        assertThat(night.totalMinutes()).isEqualTo(day.totalMinutes());
+        assertThat(night.partsCents()).isEqualTo(day.partsCents());
+        int wanted = RateCard.DEFAULT.labourCents(day.benchMinutes(), false)
+                + RateCard.DEFAULT.labourCents(day.doorMinutes() + day.travelMinutes(), true);
+        assertThat(night.labourCents()).isEqualTo(wanted).isGreaterThan(day.labourCents());
+    }
+
+    @Test
+    void anAfterHoursRateOfTheDayRateChangesNothing() {
+        Decided found = decisionFor("AA1", "41207");
+        RateCard flat = new RateCard().toBuilder().afterHoursPercent(100).build();
+        Estimate day = Estimate.of(found.decision(), found.coverage(), List.of("41208"), flat);
+        Estimate night = Estimate.of(found.decision(), found.coverage(), List.of("41208"), flat, true);
+        assertThat(night).isEqualTo(day);
+    }
+
+    @Test
+    void labourIsPricedToTheCent() {
+        RateCard rates = RateCard.DEFAULT;
+        assertThat(rates.labourCents(60, false)).isEqualTo(5200);
+        assertThat(rates.labourCents(60, true)).isEqualTo(7800);
+        assertThat(rates.labourCents(7, false)).isEqualTo(607);
+        assertThat(rates.labourCents(7, true)).isEqualTo(910);
+    }
+
+    @Test
+    void aBuilderChangesOnlyWhatItIsTold() {
+        RateCard changed = RateCard.DEFAULT.toBuilder()
+                .pinCents(20)
+                .travelMinutesPerBuilding(40)
+                .build();
+        assertThat(changed.pinCents()).isEqualTo(20);
+        assertThat(changed.travelMinutesPerBuilding()).isEqualTo(40);
+        assertThat(changed.toBuilder().pinCents(12).travelMinutesPerBuilding(25).build())
+                .isEqualTo(RateCard.DEFAULT);
+    }
+
+    @Test
+    void onlyAWeekendWindowIsAfterHours() {
+        assertThat(WindowKind.WEEKEND.isAfterHours()).isTrue();
+        assertThat(WindowKind.VACATION.isAfterHours()).isFalse();
+        assertThat(WindowKind.TERM.isAfterHours()).isFalse();
+        assertThat(WindowKind.SHUTDOWN.isAfterHours()).isFalse();
     }
 }

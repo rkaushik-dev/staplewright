@@ -22,6 +22,11 @@ public enum WindowKind implements Valued {
         return value;
     }
 
+    /** Whether work in a window of this kind is paid at the after hours rate. Only weekends are. */
+    public boolean isAfterHours() {
+        return this == WEEKEND;
+    }
+
     /** The window kind written as {@code text}, when there is one. */
     public static Optional<WindowKind> find(String text) {
         return Choices.find(WindowKind.class, text);

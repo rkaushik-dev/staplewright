@@ -72,11 +72,20 @@ public record Estimate(
         return of(decision, coverage, keysToCut, RateCard.DEFAULT);
     }
 
+    /** Cost one rekey decision done in the working day. */
+    public static Estimate of(ScopeDecision decision, CoverageMap coverage, List<String> keysToCut, RateCard rates) {
+        return of(decision, coverage, keysToCut, rates, false);
+    }
+
     /**
      * Cost one rekey decision, split by where the time is spent. Labour is the minutes at the hourly
      * rate, rounded to the cent; parts are a blank a key and a repin's pins a cylinder.
+     *
+     * <p>Done after hours, the door and travel minutes go at the after hours rate. The bench minutes
+     * do not: the cylinders are pinned in the shop in the day either way.
      */
-    public static Estimate of(ScopeDecision decision, CoverageMap coverage, List<String> keysToCut, RateCard rates) {
+    public static Estimate of(
+            ScopeDecision decision, CoverageMap coverage, List<String> keysToCut, RateCard rates, boolean afterHours) {
         HardwareRegister register = coverage.register();
         List<Cylinder> cylinders =
                 decision.cylinders().stream().map(register::cylinder).toList();
@@ -97,7 +106,9 @@ public record Estimate(
         int travel = rates.travelMinutesPerBuilding() * buildings.size();
 
         int minutes = bench + door + travel;
-        int labour = (int) Numbers.round((long) minutes * rates.labourCentsPerHour() / 60.0);
+        int labour = afterHours
+                ? rates.labourCents(bench, false) + rates.labourCents(door + travel, true)
+                : rates.labourCents(minutes, false);
         int parts = rates.blankCents() * keysToCut.size();
         parts += rates.pinCents() * rates.pinsPerCylinder() * cylinders.size();
 

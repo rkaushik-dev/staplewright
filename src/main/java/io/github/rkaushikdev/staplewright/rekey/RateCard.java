@@ -1,10 +1,16 @@
 package io.github.rkaushikdev.staplewright.rekey;
 
+import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.InputError;
+import io.github.rkaushikdev.staplewright.util.Numbers;
 import java.util.List;
 
 /**
  * What the shop charges and how long things take.
+ *
+ * <p>Work at the door outside the working day, on a weekend or overnight in a residence hall, is
+ * paid at the after hours rate, given as a percentage of the hourly one. Bench work is always done
+ * in the shop in the day, so it never is.
  *
  * @param benchMinutesPerCylinder repinning one cylinder at the bench
  * @param doorMinutesPerCylinder pulling and refitting one cylinder at the door
@@ -15,6 +21,8 @@ import java.util.List;
  * @param blankCents one key blank
  * @param pinCents one pin
  * @param pinsPerCylinder pins a repin uses
+ * @param afterHoursPercent what an hour outside the working day costs, as a percentage of an
+ *     ordinary hour
  */
 public record RateCard(
         int benchMinutesPerCylinder,
@@ -25,7 +33,8 @@ public record RateCard(
         int labourCentsPerHour,
         int blankCents,
         int pinCents,
-        int pinsPerCylinder) {
+        int pinsPerCylinder,
+        int afterHoursPercent) {
 
     /** The shop's standing rates. */
     public static final RateCard DEFAULT = new RateCard();
@@ -47,136 +56,117 @@ public record RateCard(
         if (labourCentsPerHour == 0) {
             throw new InputError("labour is not free on this campus");
         }
+        if (afterHoursPercent < 100) {
+            throw new InputError(
+                    "nobody works nights for less than the day rate",
+                    Facts.of("after_hours_percent", afterHoursPercent));
+        }
     }
 
-    /** The shop's standing rates. */
+    /** The shop's standing rates, with time and a half after hours. */
     public RateCard() {
-        this(12, 20, 2, 3, 25, 5200, 180, 12, 12);
+        this(12, 20, 2, 3, 25, 5200, 180, 12, 12, 150);
     }
 
-    /** The same card with {@code benchMinutesPerCylinder} changed. */
-    public RateCard withBenchMinutesPerCylinder(int value) {
-        return new RateCard(
-                value,
-                doorMinutesPerCylinder,
-                coreDoorMinutes,
-                keyCutMinutes,
-                travelMinutesPerBuilding,
-                labourCentsPerHour,
-                blankCents,
-                pinCents,
-                pinsPerCylinder);
+    /** What a number of minutes of labour costs in whole cents, at the after hours rate when asked. */
+    public int labourCents(int minutes, boolean afterHours) {
+        int percent = afterHours ? afterHoursPercent : 100;
+        return (int) Numbers.round((long) minutes * labourCentsPerHour * percent / 6000.0);
     }
 
-    /** The same card with {@code doorMinutesPerCylinder} changed. */
-    public RateCard withDoorMinutesPerCylinder(int value) {
-        return new RateCard(
-                benchMinutesPerCylinder,
-                value,
-                coreDoorMinutes,
-                keyCutMinutes,
-                travelMinutesPerBuilding,
-                labourCentsPerHour,
-                blankCents,
-                pinCents,
-                pinsPerCylinder);
+    /** A builder starting from this card, for a copy with some numbers changed. */
+    public Builder toBuilder() {
+        return new Builder(this);
     }
 
-    /** The same card with {@code coreDoorMinutes} changed. */
-    public RateCard withCoreDoorMinutes(int value) {
-        return new RateCard(
-                benchMinutesPerCylinder,
-                doorMinutesPerCylinder,
-                value,
-                keyCutMinutes,
-                travelMinutesPerBuilding,
-                labourCentsPerHour,
-                blankCents,
-                pinCents,
-                pinsPerCylinder);
-    }
+    /** A card put together a number at a time, checked once when it is built. */
+    public static final class Builder {
+        private int benchMinutesPerCylinder;
+        private int doorMinutesPerCylinder;
+        private int coreDoorMinutes;
+        private int keyCutMinutes;
+        private int travelMinutesPerBuilding;
+        private int labourCentsPerHour;
+        private int blankCents;
+        private int pinCents;
+        private int pinsPerCylinder;
+        private int afterHoursPercent;
 
-    /** The same card with {@code keyCutMinutes} changed. */
-    public RateCard withKeyCutMinutes(int value) {
-        return new RateCard(
-                benchMinutesPerCylinder,
-                doorMinutesPerCylinder,
-                coreDoorMinutes,
-                value,
-                travelMinutesPerBuilding,
-                labourCentsPerHour,
-                blankCents,
-                pinCents,
-                pinsPerCylinder);
-    }
+        private Builder(RateCard from) {
+            benchMinutesPerCylinder = from.benchMinutesPerCylinder;
+            doorMinutesPerCylinder = from.doorMinutesPerCylinder;
+            coreDoorMinutes = from.coreDoorMinutes;
+            keyCutMinutes = from.keyCutMinutes;
+            travelMinutesPerBuilding = from.travelMinutesPerBuilding;
+            labourCentsPerHour = from.labourCentsPerHour;
+            blankCents = from.blankCents;
+            pinCents = from.pinCents;
+            pinsPerCylinder = from.pinsPerCylinder;
+            afterHoursPercent = from.afterHoursPercent;
+        }
 
-    /** The same card with {@code travelMinutesPerBuilding} changed. */
-    public RateCard withTravelMinutesPerBuilding(int value) {
-        return new RateCard(
-                benchMinutesPerCylinder,
-                doorMinutesPerCylinder,
-                coreDoorMinutes,
-                keyCutMinutes,
-                value,
-                labourCentsPerHour,
-                blankCents,
-                pinCents,
-                pinsPerCylinder);
-    }
+        public Builder benchMinutesPerCylinder(int value) {
+            benchMinutesPerCylinder = value;
+            return this;
+        }
 
-    /** The same card with {@code labourCentsPerHour} changed. */
-    public RateCard withLabourCentsPerHour(int value) {
-        return new RateCard(
-                benchMinutesPerCylinder,
-                doorMinutesPerCylinder,
-                coreDoorMinutes,
-                keyCutMinutes,
-                travelMinutesPerBuilding,
-                value,
-                blankCents,
-                pinCents,
-                pinsPerCylinder);
-    }
+        public Builder doorMinutesPerCylinder(int value) {
+            doorMinutesPerCylinder = value;
+            return this;
+        }
 
-    /** The same card with {@code blankCents} changed. */
-    public RateCard withBlankCents(int value) {
-        return new RateCard(
-                benchMinutesPerCylinder,
-                doorMinutesPerCylinder,
-                coreDoorMinutes,
-                keyCutMinutes,
-                travelMinutesPerBuilding,
-                labourCentsPerHour,
-                value,
-                pinCents,
-                pinsPerCylinder);
-    }
+        public Builder coreDoorMinutes(int value) {
+            coreDoorMinutes = value;
+            return this;
+        }
 
-    /** The same card with {@code pinCents} changed. */
-    public RateCard withPinCents(int value) {
-        return new RateCard(
-                benchMinutesPerCylinder,
-                doorMinutesPerCylinder,
-                coreDoorMinutes,
-                keyCutMinutes,
-                travelMinutesPerBuilding,
-                labourCentsPerHour,
-                blankCents,
-                value,
-                pinsPerCylinder);
-    }
+        public Builder keyCutMinutes(int value) {
+            keyCutMinutes = value;
+            return this;
+        }
 
-    /** The same card with {@code pinsPerCylinder} changed. */
-    public RateCard withPinsPerCylinder(int value) {
-        return new RateCard(
-                benchMinutesPerCylinder,
-                doorMinutesPerCylinder,
-                coreDoorMinutes,
-                keyCutMinutes,
-                travelMinutesPerBuilding,
-                labourCentsPerHour,
-                blankCents,
-                pinCents,
-                value);
+        public Builder travelMinutesPerBuilding(int value) {
+            travelMinutesPerBuilding = value;
+            return this;
+        }
+
+        public Builder labourCentsPerHour(int value) {
+            labourCentsPerHour = value;
+            return this;
+        }
+
+        public Builder blankCents(int value) {
+            blankCents = value;
+            return this;
+        }
+
+        public Builder pinCents(int value) {
+            pinCents = value;
+            return this;
+        }
+
+        public Builder pinsPerCylinder(int value) {
+            pinsPerCylinder = value;
+            return this;
+        }
+
+        public Builder afterHoursPercent(int value) {
+            afterHoursPercent = value;
+            return this;
+        }
+
+        public RateCard build() {
+            return new RateCard(
+                    benchMinutesPerCylinder,
+                    doorMinutesPerCylinder,
+                    coreDoorMinutes,
+                    keyCutMinutes,
+                    travelMinutesPerBuilding,
+                    labourCentsPerHour,
+                    blankCents,
+                    pinCents,
+                    pinsPerCylinder,
+                    afterHoursPercent);
+        }
     }
 }
