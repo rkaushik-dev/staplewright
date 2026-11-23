@@ -1,5 +1,6 @@
 package io.github.rkaushikdev.staplewright.progression;
 
+import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.InputError;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
 import io.github.rkaushikdev.staplewright.keys.Relations;
@@ -7,12 +8,12 @@ import io.github.rkaushikdev.staplewright.spec.CuttingRules;
 import io.github.rkaushikdev.staplewright.spec.DepthAndSpaceChart;
 import io.github.rkaushikdev.staplewright.spec.Rules;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 /**
@@ -56,20 +57,7 @@ public final class Incidentals {
      * intended keys near each other in the listing. The keys are made as the stream is read.
      */
     public static Stream<Bitting> operatingKeys(List<Bitting> keys) {
-        Map<Integer, List<Integer>> breaks = breakDepths(keys);
-        List<List<Integer>> runs =
-                breaks.keySet().stream().sorted().map(breaks::get).toList();
-        int total = runs.stream().mapToInt(List::size).reduce(1, Math::multiplyExact);
-        return IntStream.range(0, total).mapToObj(index -> {
-            List<Integer> cuts = new ArrayList<>(runs.size());
-            int rest = index;
-            for (int at = runs.size() - 1; at >= 0; at--) {
-                List<Integer> run = runs.get(at);
-                cuts.add(0, run.get(rest % run.size()));
-                rest /= run.size();
-            }
-            return new Bitting(cuts);
-        });
+        return Bitting.everyCombination(List.copyOf(breakDepths(keys).values()));
     }
 
     /** How many keys turn the plug, without building any of them. */
@@ -127,5 +115,50 @@ public final class Incidentals {
         List<Bitting> widened = new ArrayList<>(intended);
         widened.add(extra);
         return incidentalCount(widened) - before;
+    }
+
+    /**
+     * Every key that turns every one of a run of cylinders, each given as the keys it was pinned
+     * for, in the operating key order.
+     *
+     * <p>Walk a corridor and the question is not what opens one door but what opens all of them. A
+     * key does when, in every chamber, it carries a depth every cylinder breaks at. The master over
+     * the corridor ought to, and so should anything above it. Anything else is a key that was never
+     * drawn as reaching that far, made out of the overlap between doors that were each pinned
+     * correctly on their own.
+     *
+     * @throws InputError for no cylinders, a cylinder with no keys, or keys of different lengths
+     */
+    public static List<Bitting> commonKeys(List<List<Bitting>> cylinders) {
+        if (cylinders.isEmpty()) {
+            throw new InputError("a run of no cylinders has nothing in common");
+        }
+        List<Map<Integer, List<Integer>>> breaks =
+                cylinders.stream().map(Incidentals::breakDepths).toList();
+        int chambers = breaks.get(0).size();
+        if (breaks.stream().anyMatch(cylinder -> cylinder.size() != chambers)) {
+            throw new InputError("the cylinders are not all the same length", Facts.of("chambers", chambers));
+        }
+        List<List<Integer>> shared = new ArrayList<>();
+        for (int chamber = 1; chamber <= chambers; chamber++) {
+            int at = chamber;
+            List<Integer> depths = breaks.get(0).get(chamber).stream()
+                    .filter(depth -> breaks.stream()
+                            .allMatch(cylinder -> cylinder.get(at).contains(depth)))
+                    .toList();
+            if (depths.isEmpty()) {
+                return List.of();
+            }
+            shared.add(depths);
+        }
+        return Bitting.everyCombination(shared).toList();
+    }
+
+    /** The keys that turn every cylinder in the run and are not among the ones named, in order. */
+    public static List<Bitting> unintendedCommonKeys(List<List<Bitting>> cylinders, Collection<Bitting> intended) {
+        Set<Bitting> named = Set.copyOf(intended);
+        return commonKeys(cylinders).stream()
+                .filter(key -> !named.contains(key))
+                .toList();
     }
 }

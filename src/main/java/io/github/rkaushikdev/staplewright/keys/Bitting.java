@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 /**
  * An ordered run of cut depths, counted from the bow toward the tip.
@@ -122,6 +123,34 @@ public final class Bitting implements Comparable<Bitting> {
         List<Integer> cuts = new ArrayList<>(depths);
         cuts.set(chamber - 1, depth);
         return new Bitting(cuts);
+    }
+
+    /**
+     * Every key carrying one of the given depths in each chamber, bow first.
+     *
+     * <p>The last chamber turns over fastest and the first slowest, which is the order a printed
+     * array and a cylinder's operating key list both read in. The keys are made as the stream is
+     * read, so a long list is never held whole.
+     *
+     * @param depths the depths allowed in each chamber, one run a chamber, bow first
+     * @throws InputError for no chambers, or a chamber allowing nothing
+     */
+    public static Stream<Bitting> everyCombination(List<List<Integer>> depths) {
+        if (depths.isEmpty() || depths.stream().anyMatch(List::isEmpty)) {
+            throw new InputError("every chamber needs at least one depth", Facts.of("chambers", depths.size()));
+        }
+        List<List<Integer>> runs = depths.stream().map(List::copyOf).toList();
+        int total = runs.stream().mapToInt(List::size).reduce(1, Math::multiplyExact);
+        return IntStream.range(0, total).mapToObj(index -> {
+            Integer[] cuts = new Integer[runs.size()];
+            int rest = index;
+            for (int at = runs.size() - 1; at >= 0; at--) {
+                List<Integer> run = runs.get(at);
+                cuts[at] = run.get(rest % run.size());
+                rest /= run.size();
+            }
+            return new Bitting(Arrays.asList(cuts));
+        });
     }
 
     /** Which chambers the two keys disagree in, counted from one. */

@@ -4,7 +4,6 @@ import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.ProgressionError;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
 import io.github.rkaushikdev.staplewright.spec.DepthAndSpaceChart;
-import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -169,18 +168,9 @@ public record ProgressionPlan(DepthAndSpaceChart chart, Bitting master, List<Int
      * the stream is read, so a large plan is never held whole.
      */
     public Stream<Bitting> combinations() {
-        List<Integer> moving = progressed.stream().sorted().toList();
-        List<List<Integer>> runs = moving.stream().map(this::depthsIn).toList();
-        return IntStream.range(0, capacity()).mapToObj(index -> {
-            List<Integer> cuts = new ArrayList<>(master.depths());
-            int rest = index;
-            for (int at = moving.size() - 1; at >= 0; at--) {
-                List<Integer> run = runs.get(at);
-                cuts.set(moving.get(at) - 1, run.get(rest % run.size()));
-                rest /= run.size();
-            }
-            return new Bitting(cuts);
-        });
+        return Bitting.everyCombination(IntStream.rangeClosed(1, chart.chambers())
+                .mapToObj(this::depthsIn)
+                .toList());
     }
 
     /** Whether a key could have come out of this plan. */

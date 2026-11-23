@@ -132,4 +132,50 @@ class IncidentalTest {
         List<Bitting> intended = List.of(b("342156"), b("362156"));
         assertThat(Incidentals.crossKeyingCost(intended, b("563748"))).isGreaterThan(20);
     }
+
+    @Test
+    void theMasterOverACorridorOpensEveryDoorInIt() {
+        Bitting master = b("442446");
+        List<List<Bitting>> corridor =
+                List.of(List.of(master, b("462446")), List.of(master, b("482446")), List.of(master, b("402446")));
+        assertThat(Incidentals.commonKeys(corridor)).containsExactly(master);
+        assertThat(Incidentals.unintendedCommonKeys(corridor, List.of(master))).isEmpty();
+    }
+
+    @Test
+    void doorsSplitInDifferentChambersShareAKeyNobodyDrew() {
+        Bitting master = b("442446");
+        List<List<Bitting>> corridor = List.of(List.of(master, b("462466")), List.of(master, b("462486")));
+        assertThat(Incidentals.commonKeys(corridor)).containsExactly(master, b("462446"));
+        assertThat(Incidentals.unintendedCommonKeys(corridor, List.of(master))).containsExactly(b("462446"));
+    }
+
+    @Test
+    void doorsWithNothingInCommonInOneChamberShareNoKey() {
+        List<List<Bitting>> pair = List.of(List.of(b("442446")), List.of(b("642446")));
+        assertThat(Incidentals.commonKeys(pair)).isEmpty();
+    }
+
+    @Test
+    void oneDoorAloneSharesEveryKeyThatTurnsIt() {
+        List<Bitting> keys = List.of(b("442446"), b("462466"));
+        assertThat(Incidentals.commonKeys(List.of(keys)))
+                .containsExactlyElementsOf(Incidentals.operatingKeys(keys).toList());
+    }
+
+    @Test
+    void aRunOfNoDoorsOrOfDoorsOfTwoLengthsIsRefused() {
+        assertThatThrownBy(() -> Incidentals.commonKeys(List.of())).isInstanceOf(InputError.class);
+        assertThatThrownBy(() -> Incidentals.commonKeys(List.of(List.of(b("442446")), List.of(b("44244")))))
+                .isInstanceOf(InputError.class);
+    }
+
+    @Test
+    void everyCombinationTurnsTheLastChamberFastest() {
+        assertThat(Bitting.everyCombination(List.of(List.of(1, 3), List.of(2), List.of(5, 7))))
+                .containsExactly(b("125"), b("127"), b("325"), b("327"));
+        assertThatThrownBy(() -> Bitting.everyCombination(List.of(List.of(1), List.of())))
+                .isInstanceOf(InputError.class);
+        assertThatThrownBy(() -> Bitting.everyCombination(List.of())).isInstanceOf(InputError.class);
+    }
 }
