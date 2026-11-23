@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.rkaushikdev.staplewright.BittingError;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
+import io.github.rkaushikdev.staplewright.keys.KeySymbol;
+import io.github.rkaushikdev.staplewright.keys.KeyingSchedule;
 import io.github.rkaushikdev.staplewright.support.Charts;
+import io.github.rkaushikdev.staplewright.support.Systems;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -94,5 +97,47 @@ class TranslationTest {
         assertThat(loose.nearestDepth(328)).contains(0);
         assertThatThrownBy(() -> loose.depthForDimension(327)).isInstanceOf(BittingError.class);
         assertThat(Map.of("midway", loose.nearestDepth(311))).containsEntry("midway", Optional.empty());
+    }
+
+    private static KeyingSchedule aCutSchedule() {
+        KeyingSchedule schedule = Systems.smallSchedule();
+        schedule.assign(KeySymbol.TOP, Bitting.parse("404040"));
+        schedule.assign(KeySymbol.parse("A"), Bitting.parse("414040"));
+        schedule.assign(KeySymbol.parse("AA"), Bitting.parse("424040"));
+        return schedule;
+    }
+
+    @Test
+    void aWholeScheduleMovesOntoAReissuedChart() {
+        KeyingSchedule old = aCutSchedule();
+        KeyingSchedule moved = new Translation(Charts.sixPinChart(), reissued()).recharted(old, new CuttingRules());
+        assertThat(moved.ruleset().chart()).isEqualTo(reissued());
+        assertThat(moved.bittingOf(KeySymbol.TOP)).contains(Bitting.parse("515151"));
+        assertThat(moved.bittingOf(KeySymbol.parse("AA"))).contains(Bitting.parse("535151"));
+        assertThat(moved.bittingOf(KeySymbol.parse("AB1"))).isEmpty();
+        assertThat(moved.symbols()).isEqualTo(old.symbols());
+        assertThat(moved.entry(KeySymbol.parse("AA")).section())
+                .isEqualTo(old.entry(KeySymbol.parse("AA")).section());
+        assertThat(old.bittingOf(KeySymbol.TOP)).contains(Bitting.parse("404040"));
+    }
+
+    @Test
+    void aScheduleWithKeysThatDoNotReadIsRefusedNamingThem() {
+        DepthAndSpaceChart twenty =
+                Charts.sixPinChart(chart -> chart.incrementMils(20).depths(List.of(0, 1, 2, 3, 4, 5, 6)));
+        Translation translation = new Translation(Charts.sixPinChart(), twenty);
+        assertThat(translation.strandedOn(aCutSchedule())).containsExactly(KeySymbol.parse("A"), KeySymbol.parse("AA"));
+        assertThatThrownBy(() -> translation.recharted(aCutSchedule(), new CuttingRules()))
+                .isInstanceOf(BittingError.class)
+                .satisfies(refused ->
+                        assertThat(((BittingError) refused).facts()).containsEntry("symbols", List.of("A", "AA")));
+    }
+
+    @Test
+    void aKeyTheNewPolicyRefusesIsCarriedAcrossAndShowsAsAProblem() {
+        CuttingRules strict = new CuttingRules().with(policy -> policy.shallowTipLimit(0));
+        KeyingSchedule moved = new Translation(Charts.sixPinChart(), reissued()).recharted(aCutSchedule(), strict);
+        assertThat(moved.bittingOf(KeySymbol.TOP)).contains(Bitting.parse("515151"));
+        assertThat(Rules.reasons(moved.problems())).containsOnly("tip").hasSize(3);
     }
 }

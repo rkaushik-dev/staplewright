@@ -3,6 +3,9 @@ package io.github.rkaushikdev.staplewright.spec;
 import io.github.rkaushikdev.staplewright.BittingError;
 import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
+import io.github.rkaushikdev.staplewright.keys.KeySymbol;
+import io.github.rkaushikdev.staplewright.keys.KeyingSchedule;
+import io.github.rkaushikdev.staplewright.keys.ScheduleEntry;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -65,18 +68,17 @@ public record Translation(DepthAndSpaceChart from, DepthAndSpaceChart to) {
      */
     public Map<Integer, Optional<Integer>> depthTable() {
         Map<Integer, Optional<Integer>> table = new LinkedHashMap<>();
-        for (int depth : from.depths()) {
-            table.put(depth, to.nearestDepth(from.dimensionFor(depth)));
-        }
+        from.depths().forEach(depth -> table.put(depth, reading(depth)));
         return Collections.unmodifiableMap(table);
     }
 
     /** The depths on the first chart that read as nothing on the second, in chart order. */
     public List<Integer> unreadableDepths() {
-        return depthTable().entrySet().stream()
-                .filter(entry -> entry.getValue().isEmpty())
-                .map(Map.Entry::getKey)
-                .toList();
+        return from.depths().stream().filter(depth -> reading(depth).isEmpty()).toList();
+    }
+
+    private Optional<Integer> reading(int depth) {
+        return to.nearestDepth(from.dimensionFor(depth));
     }
 
     /**
@@ -97,7 +99,7 @@ public record Translation(DepthAndSpaceChart from, DepthAndSpaceChart to) {
         for (int chamber = 1; chamber <= bitting.chambers(); chamber++) {
             int depth = bitting.at(chamber);
             int at = chamber;
-            cuts.add(to.nearestDepth(from.dimensionFor(depth))
+            cuts.add(reading(depth)
                     .orElseThrow(() -> new BittingError(
                             "that cut reads as no single depth on the other chart",
                             Facts.of("chamber", at, "depth", depth, "to", to.family()))));
@@ -109,7 +111,50 @@ public record Translation(DepthAndSpaceChart from, DepthAndSpaceChart to) {
     public boolean carriesOver(Bitting bitting) {
         return from.isCuttable(bitting)
                 && linesUp()
-                && bitting.depths().stream().allMatch(depth -> to.nearestDepth(from.dimensionFor(depth))
-                        .isPresent());
+                && bitting.depths().stream().allMatch(depth -> reading(depth).isPresent());
+    }
+
+    /**
+     * The symbols on a schedule whose cuts would not read on the second chart, in schedule order.
+     * Open symbols have nothing to carry over and are never in the list.
+     */
+    public List<KeySymbol> strandedOn(KeyingSchedule schedule) {
+        return schedule.entries().stream()
+                .filter(entry ->
+                        entry.bitting().filter(cut -> !carriesOver(cut)).isPresent())
+                .map(ScheduleEntry::symbol)
+                .toList();
+    }
+
+    /**
+     * The whole schedule written against the second chart, under the policy given, every line
+     * carried across with its section and note and its cuts read on the new chart.
+     *
+     * <p>The new schedule is loaded, not cut, so a key the new policy would refuse is still carried
+     * across and shows up in {@link KeyingSchedule#problems()}, the same as any key in the ground
+     * that today's rules would not cut.
+     *
+     * @throws BittingError naming every symbol whose cuts do not read on the second chart, when
+     *     any do not
+     */
+    public KeyingSchedule recharted(KeyingSchedule schedule, CuttingRules rules) {
+        List<KeySymbol> stranded = strandedOn(schedule);
+        if (!stranded.isEmpty()) {
+            throw new BittingError(
+                    "some keys on the schedule do not read on the other chart",
+                    Facts.of(
+                            "system",
+                            schedule.name(),
+                            "symbols",
+                            stranded.stream().map(KeySymbol::render).toList()));
+        }
+        ScheduleEntry top = schedule.entry(schedule.top());
+        KeyingSchedule moved =
+                new KeyingSchedule(schedule.name(), new RuleSet(to, rules), schedule.family(), top.section());
+        for (ScheduleEntry entry : schedule.entries()) {
+            moved.load(new ScheduleEntry(
+                    entry.symbol(), entry.section(), entry.bitting().map(this::translate), entry.note()));
+        }
+        return moved;
     }
 }
