@@ -31,25 +31,16 @@ public final class ArrayCache {
      * Everything that changes the answer, and nothing that does not.
      *
      * <p>The chart is identified by manufacturer and family rather than by every number on it,
-     * because two charts with the same name are the same chart. The tip limit is minus one when
-     * policy sets none.
+     * because two charts with the same name are the same chart. The policy is kept whole, so a rule
+     * added to it reaches the key without anybody remembering to copy it across.
      *
      * @param chart the manufacturer and family, joined by a slash
      * @param master the master bitting, as the shop writes it
      * @param progressed the moving chambers, in chamber order
      * @param step the progression step
-     * @param maxRun the longest run of one depth policy allows
-     * @param minDistinct the fewest depths policy wants on a key
-     * @param tipLimit the deepest tip cut policy allows, or minus one for no limit
+     * @param rules the cutting policy the array was built under
      */
-    public record Key(
-            String chart,
-            String master,
-            List<Integer> progressed,
-            int step,
-            int maxRun,
-            int minDistinct,
-            int tipLimit) {
+    public record Key(String chart, String master, List<Integer> progressed, int step, CuttingRules rules) {
 
         public Key {
             progressed = List.copyOf(progressed);
@@ -88,9 +79,7 @@ public final class ArrayCache {
                 plan.master().render(),
                 plan.progressed().stream().sorted().toList(),
                 plan.step(),
-                rules.maxRun(),
-                rules.minDistinct(),
-                rules.shallowTipLimit().orElse(-1));
+                rules);
     }
 
     /** One cache for the process, which is what the reports use. */

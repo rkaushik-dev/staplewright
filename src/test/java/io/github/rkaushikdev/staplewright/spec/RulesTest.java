@@ -107,6 +107,41 @@ class RulesTest {
     }
 
     @Test
+    void theBowRuleIsOffUnlessPolicySetsIt() {
+        assertThat(Rules.checkBow(new CuttingRules(), b("942156"))).isEmpty();
+        List<CutViolation> found = Rules.checkBow(new CuttingRules().withDeepBowLimit(7), b("942156"));
+        assertThat(Rules.reasons(found)).containsExactly("bow");
+        assertThat(found.get(0).chamber()).contains(1);
+        assertThat(found.get(0).facts()).isEqualTo(Map.of("depth", 9, "limit", 7));
+        assertThat(found.get(0).message()).isEqualTo("the cut against the shoulder is 9 and policy stops at 7");
+    }
+
+    @Test
+    void aBowCutExactlyAtTheLimitPasses() {
+        assertThat(Rules.checkBow(new CuttingRules().withDeepBowLimit(7), b("742156")))
+                .isEmpty();
+    }
+
+    @Test
+    void theBowRuleReadsOnlyTheFirstChamber() {
+        CuttingRules rules = new CuttingRules().withDeepBowLimit(3);
+        assertThat(Rules.checkBow(rules, b("249999"))).isEmpty();
+        assertThat(Rules.checkTip(rules, b("942159"))).isEmpty();
+    }
+
+    @Test
+    void theBowAndTipRulesAreReportedShoulderFirst() {
+        List<CutViolation> found = Rules.checkCuts(
+                Charts.sixPinChart(),
+                b("942159"),
+                new CuttingRules().withDeepBowLimit(6).withShallowTipLimit(6));
+        assertThat(Rules.reasons(found)).containsExactly("bow", "tip");
+        assertThat(chambers(found)).containsExactly(1, 6);
+        assertThat(Rules.isAcceptable(Charts.sixPinChart(), b("942159"), new CuttingRules().withDeepBowLimit(9)))
+                .isTrue();
+    }
+
+    @Test
     void aKeyOfTheWrongLengthGetsThatAnswerAlone() {
         assertThat(Rules.reasons(Rules.checkCuts(Charts.sixPinChart(), b("19"))))
                 .containsExactly("length");

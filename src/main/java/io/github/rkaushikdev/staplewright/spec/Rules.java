@@ -93,19 +93,30 @@ public final class Rules {
 
     /** The last chamber, which policy may want kept shallow. */
     public static List<CutViolation> checkTip(CuttingRules rules, Bitting bitting) {
-        if (rules.shallowTipLimit().isEmpty()) {
-            return List.of();
-        }
-        int limit = rules.shallowTipLimit().get();
-        int tip = bitting.at(bitting.chambers());
-        if (tip <= limit) {
+        return endCut("tip", "the tip cut is ", rules.shallowTipLimit(), bitting, bitting.chambers());
+    }
+
+    /**
+     * The first chamber, which policy may want kept off the deep end of the chart.
+     *
+     * <p>The first cut is the one against the shoulder, and a deep cut there leaves the least metal
+     * at the point where a key takes the twist, so it is the cut that snaps a key off in a cylinder.
+     */
+    public static List<CutViolation> checkBow(CuttingRules rules, Bitting bitting) {
+        return endCut("bow", "the cut against the shoulder is ", rules.deepBowLimit(), bitting, 1);
+    }
+
+    private static List<CutViolation> endCut(
+            String rule, String lead, Optional<Integer> limit, Bitting bitting, int chamber) {
+        int depth = bitting.at(chamber);
+        if (limit.isEmpty() || depth <= limit.get()) {
             return List.of();
         }
         return List.of(new CutViolation(
-                "tip",
-                "the tip cut is " + tip + " and policy stops at " + limit,
-                Optional.of(bitting.chambers()),
-                Facts.of("depth", tip, "limit", limit)));
+                rule,
+                lead + depth + " and policy stops at " + limit.get(),
+                Optional.of(chamber),
+                Facts.of("depth", depth, "limit", limit.get())));
     }
 
     /** Every reason this bitting is not one the shop would cut, under the standing rules. */
@@ -147,6 +158,7 @@ public final class Rules {
         found.addAll(checkMacs(chart, bitting));
         found.addAll(checkRuns(rules, bitting));
         found.addAll(checkVariety(chart, rules, bitting));
+        found.addAll(checkBow(rules, bitting));
         found.addAll(checkTip(rules, bitting));
         return List.copyOf(found);
     }

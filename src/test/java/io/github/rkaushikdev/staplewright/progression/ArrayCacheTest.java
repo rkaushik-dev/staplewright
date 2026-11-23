@@ -73,6 +73,33 @@ class ArrayCacheTest {
     }
 
     @Test
+    void theBowRuleReachesTheKey() {
+        ArrayCache.Key first = ArrayCache.cacheKey(aPlan(), new CuttingRules());
+        ArrayCache.Key second = ArrayCache.cacheKey(aPlan(), new CuttingRules().withDeepBowLimit(4));
+        assertThat(first).isNotEqualTo(second);
+    }
+
+    @Test
+    void theEndOfChartRulesReachTheKey() {
+        ArrayCache.Key first = ArrayCache.cacheKey(aPlan(), new CuttingRules());
+        assertThat(first).isNotEqualTo(ArrayCache.cacheKey(aPlan(), new CuttingRules().withForbidAllShallowest(false)));
+        assertThat(first).isNotEqualTo(ArrayCache.cacheKey(aPlan(), new CuttingRules().withForbidAllDeepest(false)));
+    }
+
+    @Test
+    void aBowLimitBuildsItsOwnArray() {
+        ArrayCache cache = new ArrayCache();
+        ProgressionPlan plan = aPlan(List.of(1, 4));
+        KeyBittingArray open = cache.get(plan, new CuttingRules());
+        KeyBittingArray limited = cache.get(plan, new CuttingRules().withDeepBowLimit(2));
+        assertThat(limited).isNotSameAs(open);
+        assertThat(limited.rejectionReasons()).containsKey("bow");
+        assertThat(limited.usable()).isNotEmpty().allSatisfy(key -> assertThat(key.at(1))
+                .isLessThanOrEqualTo(2));
+        assertThat(limited.usableCount()).isLessThan(open.usableCount());
+    }
+
+    @Test
     void theFirstLookBuildsAndTheSecondDoesNot() {
         ArrayCache cache = new ArrayCache();
         KeyBittingArray first = cache.get(aPlan());
