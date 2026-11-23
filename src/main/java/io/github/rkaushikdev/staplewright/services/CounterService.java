@@ -10,6 +10,7 @@ import io.github.rkaushikdev.staplewright.control.EntryKind;
 import io.github.rkaushikdev.staplewright.control.KeyState;
 import io.github.rkaushikdev.staplewright.control.Keyholder;
 import io.github.rkaushikdev.staplewright.control.RequestState;
+import io.github.rkaushikdev.staplewright.keys.KeySymbol;
 import io.github.rkaushikdev.staplewright.persistence.KeyRepository;
 import io.github.rkaushikdev.staplewright.persistence.Numbering;
 import io.github.rkaushikdev.staplewright.persistence.RequestRepository;
@@ -176,7 +177,7 @@ public final class CounterService {
                     "that keyholder may not hold keys",
                     Facts.of("number", number, "standing", person.standing().value()));
         }
-        int cents = deposit.orElseGet(() -> rates.forKey(row.isMaster()));
+        int cents = deposit.orElseGet(() -> rates.forKey(KeySymbol.parse(row.getSymbol()), row.isMaster()));
         String tag = numbering.next(TAG_SERIES);
         IssuedKeyRow key = new IssuedKeyRow(tag, row.getSymbol(), row.getKeyholder(), when);
         key.setDueOn(dueOn.orElse(null));

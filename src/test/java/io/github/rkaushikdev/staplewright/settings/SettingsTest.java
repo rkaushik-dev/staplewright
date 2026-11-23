@@ -8,6 +8,9 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import io.github.rkaushikdev.staplewright.ConflictError;
 import io.github.rkaushikdev.staplewright.InputError;
+import io.github.rkaushikdev.staplewright.control.DepositRates;
+import io.github.rkaushikdev.staplewright.keys.KeySymbol;
+import io.github.rkaushikdev.staplewright.keys.Marking;
 import io.github.rkaushikdev.staplewright.util.Records;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -46,8 +49,9 @@ class SettingsTest {
     @Test
     void theDepositsComeOffTheMapping() {
         ShopSettings found = Settings.fromMapping(env("DEPOSIT_CHANGE_CENTS", 1000, "DEPOSIT_MASTER_CENTS", 9000));
-        assertThat(found.deposits().forKey(false)).isEqualTo(1000);
-        assertThat(found.deposits().forKey(true)).isEqualTo(9000);
+        assertThat(found.deposits().forKey(KeySymbol.parse("AA1"), false)).isEqualTo(1000);
+        assertThat(found.deposits().forKey(KeySymbol.parse("AA"), true)).isEqualTo(9000);
+        assertThat(found.deposits().forKey(KeySymbol.parse("A"), true)).isEqualTo(9000);
     }
 
     @Test
@@ -129,7 +133,7 @@ class SettingsTest {
     @Test
     void theDepositsCanBeChangedWithoutTouchingTheRest() {
         ShopSettings found = DEFAULTS.withDeposits(1000, 9000);
-        assertThat(found.deposits().forKey(true)).isEqualTo(9000);
+        assertThat(found.deposits().forKey(KeySymbol.parse("AA"), true)).isEqualTo(9000);
         assertThat(found.notices()).isEqualTo(DEFAULTS.notices());
     }
 
@@ -280,5 +284,19 @@ class SettingsTest {
         assertThat(settings.cutting().minDistinct())
                 .isEqualTo(DEFAULTS.cutting().minDistinct());
         assertThat(settings.notices()).isEqualTo(DEFAULTS.notices());
+    }
+
+    @Test
+    void theSettingsPageSaysWhenTheGrandMastersAreTreatedApart() {
+        assertThat(DEFAULTS.describe()).contains("deposits: 2500 and 5000 cents");
+        assertThat(DEFAULTS.describe())
+                .contains("stamping: change keys carry the key symbol, masters carry a blind code");
+        ShopSettings apart =
+                DEFAULTS.withStamping(DEFAULTS.stamping().with(stamps -> stamps.grandMasters(Marking.TAG)));
+        assertThat(apart.describe())
+                .contains("stamping: change keys carry the key symbol, masters carry a blind code, grand masters carry "
+                        + Marking.TAG.value());
+        assertThat(new DepositRates().withGrandMasterCents(15000).describe())
+                .isEqualTo("2500 and 5000 cents, grand masters 15000");
     }
 }

@@ -12,6 +12,7 @@ import io.github.rkaushikdev.staplewright.control.Authorizer;
 import io.github.rkaushikdev.staplewright.control.DepositRates;
 import io.github.rkaushikdev.staplewright.control.Directory;
 import io.github.rkaushikdev.staplewright.control.Keyholder;
+import io.github.rkaushikdev.staplewright.keys.KeySymbol;
 import io.github.rkaushikdev.staplewright.persistence.Session;
 import io.github.rkaushikdev.staplewright.persistence.mappers.ControlMappers;
 import io.github.rkaushikdev.staplewright.persistence.models.DepositLineRow;
@@ -203,6 +204,30 @@ class ServiceCounterTest {
         CounterService service = aCounter(new DepositRates(1000, 9000));
         KeyRequestRow row = anApprovedRequest(service);
         assertThat(service.issue(row.getNumber(), TODAY).getDepositCents()).isEqualTo(1000);
+    }
+
+    @Test
+    void aGrandMasterGoesAtItsOwnRateWhenTheShopNamesOne() {
+        CounterService service = aCounter(new DepositRates().withGrandMasterCents(15000));
+        KeyRequestRow grand = aRequest(service, "phamm", "B", "HEI", "runs the science precinct", true);
+        service.approve(grand.getNumber(), "phamm", TODAY);
+        assertThat(service.issue(grand.getNumber(), TODAY).getDepositCents()).isEqualTo(15000);
+        KeyRequestRow master = aRequest(service, "phamm", "AB", "HEI", "runs the second floor", true);
+        service.approve(master.getNumber(), "phamm", TODAY);
+        assertThat(service.issue(master.getNumber(), TODAY).getDepositCents()).isEqualTo(5000);
+    }
+
+    @Test
+    void theRatesFollowTheRequestAndThenTheLevel() {
+        DepositRates rates = new DepositRates(2500, 5000, Optional.of(15000));
+        assertThat(rates.forKey(KeySymbol.parse("AA1"), false)).isEqualTo(2500);
+        assertThat(rates.forKey(KeySymbol.parse("AA1"), true)).isEqualTo(5000);
+        assertThat(rates.forKey(KeySymbol.parse("ABC"), true)).isEqualTo(5000);
+        assertThat(rates.forKey(KeySymbol.parse("A"), true)).isEqualTo(15000);
+        assertThat(rates.forKey(KeySymbol.TOP, true)).isEqualTo(15000);
+        assertThat(rates.forKey(KeySymbol.parse("A"), false)).isEqualTo(2500);
+        assertThat(new DepositRates().forKey(KeySymbol.TOP, true)).isEqualTo(5000);
+        assertThatThrownBy(() -> new DepositRates().withGrandMasterCents(-1)).isInstanceOf(InputError.class);
     }
 
     @Test

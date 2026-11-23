@@ -102,14 +102,17 @@ public record ShopSettings(
     public List<String> describe() {
         return List.of(
                 "macs policy: runs to " + cutting.maxRun() + ", " + cutting.minDistinct() + " depths minimum",
-                "deposits: " + deposits.changeKeyCents() + " and " + deposits.masterCents() + " cents",
+                "deposits: " + deposits.describe(),
                 "notices: reminder at " + notices.reminderDays() + " days, write off at " + notices.writeOffDays(),
                 "rekey: cap " + scope.cylinderCap().map(String::valueOf).orElse("None") + ", strict repin "
                         + (scope.recutAllOnRepin() ? "True" : "False"),
                 "boxes: no wider than level " + boxes.lowestLevel() + ", checked every " + boxes.checkDays() + " days",
                 "handovers: confirmed inside " + transfers.confirmDays() + " days",
                 "stamping: change keys carry " + stamping.changeKeys().value() + ", masters carry "
-                        + stamping.masters().value(),
+                        + stamping.masters().value()
+                        + stamping.grandMasters()
+                                .map(marking -> ", grand masters carry " + marking.value())
+                                .orElse(""),
                 "quarantine: " + quarantineYears + " years",
                 "progression: " + progressionStep + " steps");
     }
