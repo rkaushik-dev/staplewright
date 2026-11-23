@@ -29,6 +29,7 @@ import java.util.Set;
  *   <li>a change key cut identically to its master, which is not a change key
  *   <li>a key that moved in a chamber the system said was constant
  *   <li>a split of one step, which is a wafer that will jam
+ *   <li>two keys a single step apart in a single chamber, which a worn key will cross
  *   <li>more wafers in one chamber than the shop will build
  * </ul>
  */
@@ -43,20 +44,15 @@ public final class Validation {
     public static List<Finding> duplicateCuts(KeyingSchedule schedule) {
         Map<Bitting, KeySymbol> seen = new HashMap<>();
         List<Finding> found = new ArrayList<>();
-        for (ScheduleEntry entry : schedule.entries()) {
-            if (entry.bitting().isEmpty()) {
-                continue;
+        for (Cut cut : cuts(schedule)) {
+            KeySymbol first = seen.putIfAbsent(cut.bitting(), cut.symbol());
+            if (first != null) {
+                found.add(cut.finding(
+                        "duplicate_cut",
+                        Severity.BLOCKING,
+                        " is cut the same as " + first.render() + ", "
+                                + cut.bitting().render()));
             }
-            Bitting bitting = entry.bitting().get();
-            KeySymbol first = seen.putIfAbsent(bitting, entry.symbol());
-            if (first == null) {
-                continue;
-            }
-            found.add(new Finding(
-                    "duplicate_cut",
-                    Severity.BLOCKING,
-                    entry.symbol().render() + " is cut the same as " + first.render() + ", " + bitting.render(),
-                    entry.symbol().render()));
         }
         return List.copyOf(found);
     }
@@ -64,15 +60,10 @@ public final class Validation {
     /** A key cut identically to the one above it. */
     public static List<Finding> keysMatchingTheirMaster(KeyingSchedule schedule) {
         List<Finding> found = new ArrayList<>();
-        for (ScheduleEntry entry : schedule.entries()) {
-            Optional<Bitting> above = cutAbove(schedule, entry);
-            if (above.isPresent() && above.equals(entry.bitting())) {
-                KeySymbol parent = entry.symbol().parent().orElseThrow();
-                found.add(new Finding(
-                        "same_as_master",
-                        Severity.BLOCKING,
-                        entry.symbol().render() + " is cut the same as " + parent.render(),
-                        entry.symbol().render()));
+        for (Cut cut : cuts(schedule)) {
+            if (cutAbove(schedule, cut).filter(cut.bitting()::equals).isPresent()) {
+                KeySymbol parent = cut.symbol().parent().orElseThrow();
+                found.add(cut.finding("same_as_master", Severity.BLOCKING, " is cut the same as " + parent.render()));
             }
         }
         return List.copyOf(found);
@@ -86,21 +77,50 @@ public final class Validation {
     /** Splits between a key and its master that are not a whole number of steps. */
     public static List<Finding> thinSplits(KeyingSchedule schedule, int step) {
         List<Finding> found = new ArrayList<>();
-        for (ScheduleEntry entry : schedule.entries()) {
-            Optional<Bitting> above = cutAbove(schedule, entry);
-            if (above.isEmpty()) {
-                continue;
-            }
-            Bitting cut = entry.bitting().orElseThrow();
-            for (int chamber = 1; chamber <= schedule.chambers(); chamber++) {
-                int gap = Math.abs(above.get().at(chamber) - cut.at(chamber));
+        for (Cut cut : cuts(schedule)) {
+            Optional<Bitting> above = cutAbove(schedule, cut);
+            for (int chamber = 1; above.isPresent() && chamber <= schedule.chambers(); chamber++) {
+                int gap = Math.abs(above.get().at(chamber) - cut.bitting().at(chamber));
                 if (gap != 0 && gap % step != 0) {
-                    found.add(new Finding(
+                    found.add(cut.finding(
                             "off_step",
                             Severity.SERIOUS,
-                            entry.symbol().render() + " splits " + gap + " in chamber " + chamber
-                                    + " and the system moves " + step + " at a time",
-                            entry.symbol().render()));
+                            " splits " + gap + " in chamber " + chamber + " and the system moves " + step
+                                    + " at a time"));
+                }
+            }
+        }
+        return List.copyOf(found);
+    }
+
+    /**
+     * Two keys that differ in a single chamber, and there by less than a whole step: the later one
+     * in schedule order is reported, against the first it sits that near.
+     *
+     * <p>A cylinder pinned for one of them is a worn key away from turning for the other. That is the
+     * whole reason systems progress two steps at a time, and a schedule with hand cut keys in it
+     * loses the protection one pair at a time. A key and the master directly above it are left to
+     * the split check, which already says more about them.
+     */
+    public static List<Finding> nearNeighbours(KeyingSchedule schedule, int step) {
+        List<Cut> cuts = cuts(schedule);
+        List<Finding> found = new ArrayList<>();
+        for (int later = 1; later < cuts.size(); later++) {
+            Cut cut = cuts.get(later);
+            for (Cut earlier : cuts.subList(0, later)) {
+                List<Integer> apart = earlier.bitting().differsFrom(cut.bitting());
+                if (apart.size() != 1 || cut.symbol().parent().equals(Optional.of(earlier.symbol()))) {
+                    continue;
+                }
+                int chamber = apart.get(0);
+                int gap = Math.abs(earlier.bitting().at(chamber) - cut.bitting().at(chamber));
+                if (gap < step) {
+                    found.add(cut.finding(
+                            "near_neighbour",
+                            Severity.SERIOUS,
+                            " is " + gap + " from " + earlier.symbol().render() + " in chamber " + chamber
+                                    + " and the same everywhere else"));
+                    break;
                 }
             }
         }
@@ -195,6 +215,7 @@ public final class Validation {
         found.addAll(duplicateCuts(schedule));
         found.addAll(keysMatchingTheirMaster(schedule));
         found.addAll(thinSplits(schedule, step));
+        found.addAll(nearNeighbours(schedule, step));
         plan.ifPresent(drawn -> found.addAll(keysOffPlan(schedule, drawn)));
         found.addAll(uncutSymbols(schedule));
         found.sort(Comparator.comparing(Finding::severity)
@@ -215,12 +236,25 @@ public final class Validation {
         return blocking(findings).isEmpty();
     }
 
-    /** What the key directly above this cut line is cut to, when both are cut and the parent is held. */
-    private static Optional<Bitting> cutAbove(KeyingSchedule schedule, ScheduleEntry entry) {
-        Optional<KeySymbol> parent = entry.symbol().parent();
-        if (entry.bitting().isEmpty() || parent.isEmpty() || !schedule.contains(parent.get())) {
-            return Optional.empty();
+    /** What the key directly above this cut line is cut to, when the parent is held and cut. */
+    private static Optional<Bitting> cutAbove(KeyingSchedule schedule, Cut cut) {
+        return cut.symbol().parent().filter(schedule::contains).flatMap(schedule::bittingOf);
+    }
+
+    /** Every cut line, in schedule order. */
+    private static List<Cut> cuts(KeyingSchedule schedule) {
+        return schedule.entries().stream()
+                .filter(ScheduleEntry::isCut)
+                .map(entry -> new Cut(entry.symbol(), entry.bitting().orElseThrow()))
+                .toList();
+    }
+
+    /** One symbol and what it is cut to. */
+    private record Cut(KeySymbol symbol, Bitting bitting) {
+
+        /** A finding about this key, its message led by the symbol. */
+        Finding finding(String code, Severity severity, String rest) {
+            return new Finding(code, severity, symbol.render() + rest, symbol.render());
         }
-        return schedule.bittingOf(parent.get());
     }
 }

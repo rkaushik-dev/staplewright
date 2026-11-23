@@ -106,6 +106,56 @@ class ValidateTest {
     }
 
     @Test
+    void twoSiblingsOneStepApartInOneChamberAreNearNeighbours() {
+        KeyingSchedule schedule = force(aGoodSchedule(), "AA2", "621446");
+        List<Finding> found = Validation.nearNeighbours(schedule, 2);
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).code()).isEqualTo("near_neighbour");
+        assertThat(found.get(0).severity()).isSameAs(Severity.SERIOUS);
+        assertThat(found.get(0).symbol()).contains("AA2");
+        assertThat(found.get(0).message()).isEqualTo("AA2 is 1 from AA1 in chamber 3 and the same everywhere else");
+    }
+
+    @Test
+    void aNearKeyIsReportedOnceAgainstTheFirstItSitsNear() {
+        KeyingSchedule schedule = force(aGoodSchedule(), "AB1", "621446");
+        List<Finding> found = Validation.nearNeighbours(schedule, 2);
+        assertThat(found)
+                .extracting(Finding::message)
+                .containsExactly("AB1 is 1 from AA in chamber 3 and the same everywhere else");
+    }
+
+    @Test
+    void aKeyOneStepFromItsOwnMasterIsLeftToTheSplitCheck() {
+        KeyingSchedule schedule = force(aGoodSchedule(), "AA1", "621446");
+        assertThat(Validation.nearNeighbours(schedule, 2)).isEmpty();
+        assertThat(Validation.thinSplits(schedule)).extracting(Finding::code).containsExactly("off_step");
+    }
+
+    @Test
+    void twoChambersApartIsNotANearNeighbour() {
+        KeyingSchedule schedule = force(aGoodSchedule(), "AA2", "621456");
+        assertThat(Validation.nearNeighbours(schedule, 2)).isEmpty();
+    }
+
+    @Test
+    void aOneStepSystemHasNoNearNeighboursAndAWholeStepIsNotOne() {
+        KeyingSchedule schedule = force(aGoodSchedule(), "AA2", "621446");
+        assertThat(Validation.nearNeighbours(schedule, 1)).isEmpty();
+        assertThat(Validation.nearNeighbours(aGoodSchedule(), 2)).isEmpty();
+        assertThat(Validation.nearNeighbours(aGoodSchedule(), 5))
+                .extracting(Finding::symbol)
+                .contains(Optional.of("AA2"));
+    }
+
+    @Test
+    void theReviewCarriesTheNearNeighbours() {
+        KeyingSchedule schedule = force(aGoodSchedule(), "AA2", "621446");
+        assertThat(Validation.review(schedule)).extracting(Finding::code).contains("near_neighbour", "off_step");
+        assertThat(Validation.review(schedule, 1)).extracting(Finding::code).doesNotContain("near_neighbour");
+    }
+
+    @Test
     void aKeyThatMovedInAConstantChamberIsOffPlan() {
         KeyingSchedule schedule = force(aGoodSchedule(), "AA1", "621456");
         ProgressionPlan plan = new ProgressionPlan(Charts.sixPinChart(), b("622446"), List.of(3), 2);
