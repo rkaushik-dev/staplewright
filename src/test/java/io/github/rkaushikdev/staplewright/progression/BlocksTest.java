@@ -8,8 +8,11 @@ import io.github.rkaushikdev.staplewright.CapacityError;
 import io.github.rkaushikdev.staplewright.ProgressionError;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
 import io.github.rkaushikdev.staplewright.keys.KeySymbol;
+import io.github.rkaushikdev.staplewright.keys.KeyingSchedule;
 import io.github.rkaushikdev.staplewright.support.Charts;
+import io.github.rkaushikdev.staplewright.support.Systems;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 class BlocksTest {
@@ -154,5 +157,71 @@ class BlocksTest {
         List<Allocation> blocks = Blocks.byBlocks(array, masters(3), 10);
         List<Allocation> rotating = Blocks.byRotatingConstant(array, masters(3), 2);
         assertThat(blocks.get(0).keys()).isNotEqualTo(rotating.get(0).keys());
+    }
+
+    /** The small campus schedule with its four change keys cut from the keys named, in order. */
+    private static KeyingSchedule cutFrom(Bitting aa1, Bitting aa2, Bitting ab1, Bitting ab2) {
+        KeyingSchedule schedule = Systems.smallSchedule();
+        schedule.assign(sym("AA1"), aa1);
+        schedule.assign(sym("AA2"), aa2);
+        schedule.assign(sym("AB1"), ab1);
+        schedule.assign(sym("AB2"), ab2);
+        return schedule;
+    }
+
+    @Test
+    void keysCutFromTheirOwnBlocksAreQuiet() {
+        List<Allocation> found = Blocks.byBlocks(anArray(), masters(2), 10);
+        List<Bitting> aa = found.get(0).keys();
+        List<Bitting> ab = found.get(1).keys();
+        assertThat(Blocks.strays(cutFrom(aa.get(0), aa.get(1), ab.get(0), ab.get(1)), found))
+                .isEmpty();
+    }
+
+    @Test
+    void aKeyBorrowedFromTheNextBlockReadsBackToTheWrongMaster() {
+        List<Allocation> found = Blocks.byBlocks(anArray(), masters(2), 10);
+        List<Bitting> aa = found.get(0).keys();
+        List<Bitting> ab = found.get(1).keys();
+        List<Finding> strays = Blocks.strays(cutFrom(aa.get(0), aa.get(1), ab.get(0), aa.get(2)), found);
+        assertThat(strays).hasSize(1);
+        assertThat(strays.get(0).code()).isEqualTo("borrowed_key");
+        assertThat(strays.get(0).severity()).isSameAs(Severity.SERIOUS);
+        assertThat(strays.get(0).symbol()).contains("AB2");
+        assertThat(strays.get(0).message()).isEqualTo("AB2 is cut from the keys AA was given");
+    }
+
+    @Test
+    void aBorrowedKeyUnderARotatingConstantNamesTheHeldCut() {
+        List<Allocation> found = Blocks.byRotatingConstant(anArray(), masters(2), 2);
+        List<Bitting> aa = found.get(0).keys();
+        List<Bitting> ab = found.get(1).keys();
+        int held = found.get(1).constantDepth().orElseThrow();
+        List<Finding> strays = Blocks.strays(cutFrom(ab.get(0), aa.get(1), ab.get(1), ab.get(2)), found);
+        assertThat(strays)
+                .extracting(Finding::message)
+                .containsExactly(
+                        "AA1 is cut from the keys AB was given, and carries the " + held + " held in chamber 2 for it");
+    }
+
+    @Test
+    void aKeyNobodyWasGivenIsANoteAndAnUnallocatedMasterSaysNothing() {
+        KeyBittingArray array = anArray();
+        List<Allocation> found = Blocks.byBlocks(array, List.of(sym("AA")), 10);
+        List<Bitting> tail = Blocks.unallocated(array, found);
+        List<Finding> strays =
+                Blocks.strays(cutFrom(found.get(0).keys().get(0), tail.get(0), tail.get(1), tail.get(2)), found);
+        assertThat(strays).extracting(Finding::code).containsExactly("unallocated_key");
+        assertThat(strays.get(0).severity()).isSameAs(Severity.NOTE);
+        assertThat(strays.get(0).message()).isEqualTo("AA2 is cut from keys nobody was given");
+    }
+
+    @Test
+    void anOpenChangeKeyIsNotAStray() {
+        List<Allocation> found = Blocks.byBlocks(anArray(), masters(2), 10);
+        KeyingSchedule schedule = Systems.smallSchedule();
+        schedule.assign(sym("AA1"), found.get(1).keys().get(0));
+        assertThat(Blocks.strays(schedule, found)).extracting(Finding::symbol).containsExactly(Optional.of("AA1"));
+        assertThat(Blocks.strays(Systems.smallSchedule(), found)).isEmpty();
     }
 }
