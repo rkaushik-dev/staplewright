@@ -61,19 +61,35 @@ class DuplicationTest {
         DuplicationPolicy policy = new DuplicationPolicy();
         assertThat(policy.ceilingFor(sym("AA1"))).isEqualTo(4);
         assertThat(policy.ceilingFor(sym("AA"))).isEqualTo(2);
+        assertThat(policy.ceilingFor(sym("ABC"))).isEqualTo(2);
+        assertThat(policy.ceilingFor(sym("A"))).isEqualTo(1);
         assertThat(policy.ceilingFor(sym("GGM"))).isEqualTo(1);
     }
 
     @Test
+    void aGrandMasterHasItsOwnCeilingApartFromTheMastersUnderIt() {
+        DuplicationPolicy policy = new DuplicationPolicy()
+                .with(ceilings -> ceilings.grandMasterLimit(3).masterLimit(5));
+        assertThat(policy.ceilingFor(sym("B"))).isEqualTo(3);
+        assertThat(policy.ceilingFor(sym("BA"))).isEqualTo(5);
+        assertThat(policy.ceilingFor(sym("BA1"))).isEqualTo(4);
+        assertThat(policy.ceilingFor(sym("GGM"))).isEqualTo(1);
+        assertThat(new DuplicationPolicy().with(ceilings -> ceilings)).isEqualTo(DuplicationPolicy.DEFAULT);
+    }
+
+    @Test
     void aShopCanSetItsOwnCeilings() {
-        DuplicationPolicy policy = new DuplicationPolicy().withChangeKeyLimit(8).withMasterLimit(3);
+        DuplicationPolicy policy = new DuplicationPolicy()
+                .with(ceilings -> ceilings.changeKeyLimit(8).masterLimit(3));
         assertThat(policy.ceilingFor(sym("AA1"))).isEqualTo(8);
         assertThat(policy.ceilingFor(sym("AB"))).isEqualTo(3);
     }
 
     static Stream<Supplier<DuplicationPolicy>> aCeilingOfNothingIsRefused() {
         return Stream.of(
-                () -> new DuplicationPolicy().withChangeKeyLimit(0), () -> new DuplicationPolicy().withTopKeyLimit(0));
+                () -> new DuplicationPolicy().with(ceilings -> ceilings.changeKeyLimit(0)),
+                () -> new DuplicationPolicy().with(ceilings -> ceilings.topKeyLimit(0)),
+                () -> new DuplicationPolicy().with(ceilings -> ceilings.grandMasterLimit(0)));
     }
 
     @ParameterizedTest
@@ -208,7 +224,7 @@ class DuplicationTest {
 
     @Test
     void aShopCanRestrictEverything() {
-        DuplicationPolicy policy = new DuplicationPolicy().withRestrictedOnlyForMasters(false);
+        DuplicationPolicy policy = new DuplicationPolicy().with(ceilings -> ceilings.restrictedOnlyForMasters(false));
         assertThat(Duplication.restrictedNeeded(policy, sym("AA1"))).isTrue();
     }
 
