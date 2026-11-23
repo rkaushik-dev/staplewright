@@ -193,4 +193,50 @@ class SegmentsTest {
         assertThat(kit.stockOf(bottom(150))).isEqualTo(4);
         assertThat(clone.stockOf(bottom(150))).isZero();
     }
+
+    @Test
+    void aBinDrawnDownToNothingIsStillABin() {
+        PinKit kit = aKit();
+        kit.draw(Collections.nCopies(4, wafer(45)));
+        assertThat(kit.stockOf(wafer(45))).isZero();
+        assertThat(kit.emptyBins()).containsExactly(new PinKit.Bin(wafer(45), 0));
+        assertThat(kit.bins()).doesNotContain(new PinKit.Bin(wafer(45), 0)).hasSize(7);
+        assertThat(kit.lengths(SegmentKind.WAFER)).containsExactly(30, 60);
+        assertThat(kit.copy().emptyBins()).containsExactly(new PinKit.Bin(wafer(45), 0));
+    }
+
+    @Test
+    void theBinsUnderParComeBackInBinCodeOrderEmptyOnesIncluded() {
+        PinKit kit = aKit();
+        kit.draw(List.of(wafer(45), wafer(45), wafer(45), wafer(45), wafer(30), wafer(30), bottom(165)));
+        assertThat(kit.belowPar(3)).containsExactly(new PinKit.Bin(wafer(30), 2), new PinKit.Bin(wafer(45), 0));
+        assertThat(kit.belowPar(4)).extracting(bin -> bin.segment().binCode()).containsExactly("B165", "W30", "W45");
+        assertThat(kit.belowPar(1)).containsExactly(new PinKit.Bin(wafer(45), 0));
+    }
+
+    @Test
+    void theReorderFillsEveryBinUnderParAndLeavesTheRest() {
+        PinKit kit = aKit();
+        kit.draw(List.of(wafer(45), wafer(45), wafer(45), wafer(45), wafer(30), bottom(165), bottom(165), bottom(165)));
+        Map<PinSegment, Integer> order = kit.reorder(2, 10);
+        assertThat(order).containsExactly(Map.entry(bottom(165), 9), Map.entry(wafer(45), 10));
+        order.forEach(kit::add);
+        assertThat(kit.belowPar(2)).isEmpty();
+        assertThat(kit.stockOf(wafer(30))).isEqualTo(3);
+    }
+
+    @Test
+    void aParOrFillLevelThatMakesNoSenseIsRefused() {
+        assertThatThrownBy(() -> aKit().belowPar(0)).isInstanceOf(PinningError.class);
+        assertThatThrownBy(() -> aKit().reorder(5, 4)).isInstanceOf(PinningError.class);
+        assertThat(aKit().reorder(2, 2)).isEmpty();
+    }
+
+    @Test
+    void aStandardKitStocksEveryKindItWasGiven() {
+        PinKit kit = aKit();
+        assertThat(kit.lengths(SegmentKind.BOTTOM)).containsExactly(150, 165, 180);
+        assertThat(kit.lengths(SegmentKind.DRIVER)).containsExactly(175, 190);
+        assertThat(kit.emptyBins()).isEmpty();
+    }
 }

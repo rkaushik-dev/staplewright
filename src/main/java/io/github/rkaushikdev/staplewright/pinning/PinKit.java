@@ -9,6 +9,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntPredicate;
 import java.util.function.Predicate;
 
 /**
@@ -19,6 +20,10 @@ import java.util.function.Predicate;
  * one that was never started. A kit is finite, and the shop runs out of the useful middle lengths
  * long before it runs out of the extremes, which is why drawing from a kit is a transaction that
  * can fail rather than a lookup.
+ *
+ * <p>A bin drawn down to nothing is still a bin. It keeps its place in the cabinet, holding
+ * nought, because the empty bin is the first line on the reorder and a cabinet that forgot it ever
+ * stocked a part would never order it again.
  */
 public final class PinKit {
 
@@ -67,15 +72,11 @@ public final class PinKit {
             Iterable<Integer> driverLengths,
             int count) {
         PinKit kit = new PinKit(name);
-        for (int length : bottomLengths) {
-            kit.add(new PinSegment(SegmentKind.BOTTOM, length), count);
-        }
-        for (int length : waferLengths) {
-            kit.add(new PinSegment(SegmentKind.WAFER, length), count);
-        }
-        for (int length : driverLengths) {
-            kit.add(new PinSegment(SegmentKind.DRIVER, length), count);
-        }
+        List<Map.Entry<SegmentKind, Iterable<Integer>>> runs = List.of(
+                Map.entry(SegmentKind.BOTTOM, bottomLengths),
+                Map.entry(SegmentKind.WAFER, waferLengths),
+                Map.entry(SegmentKind.DRIVER, driverLengths));
+        runs.forEach(run -> run.getValue().forEach(length -> kit.add(new PinSegment(run.getKey(), length), count)));
         return kit;
     }
 
@@ -160,14 +161,7 @@ public final class PinKit {
             missing.forEach((segment, count) -> byBin.put(segment.toString(), count));
             throw new CapacityError("the kit cannot fill that", Facts.of("kit", name, "short", byBin));
         }
-        for (PinSegment segment : parts) {
-            int remaining = stock.get(segment) - 1;
-            if (remaining > 0) {
-                stock.put(segment, remaining);
-            } else {
-                stock.remove(segment);
-            }
-        }
+        parts.forEach(segment -> stock.merge(segment, -1, Integer::sum));
     }
 
     /** Parts off a cylinder that came apart go back in the drawer. */
@@ -184,7 +178,46 @@ public final class PinKit {
 
     /** Every bin with something in it, in bin code order. */
     public List<Bin> bins() {
+        return binsWhere(count -> count > 0);
+    }
+
+    /** Every bin the cabinet stocks that has been drawn down to nothing, in bin code order. */
+    public List<Bin> emptyBins() {
+        return binsWhere(count -> count == 0);
+    }
+
+    /**
+     * Every bin the cabinet stocks holding fewer than {@code par}, empty ones included, in bin code
+     * order.
+     *
+     * @throws PinningError for a par under one
+     */
+    public List<Bin> belowPar(int par) {
+        if (par < 1) {
+            throw new PinningError("a par level is at least one", Facts.of("par", par));
+        }
+        return binsWhere(count -> count < par);
+    }
+
+    /**
+     * What to order to bring every bin under par back up to {@code fillTo}, by bin, in bin code
+     * order. A bin at or over par is left alone however far it is under the fill level, because an
+     * order for three wafers costs more in postage than the wafers.
+     *
+     * @throws PinningError for a par under one, or a fill level under the par
+     */
+    public Map<PinSegment, Integer> reorder(int par, int fillTo) {
+        if (fillTo < par) {
+            throw new PinningError("a bin is filled to at least its par", Facts.of("par", par, "fill_to", fillTo));
+        }
+        Map<PinSegment, Integer> order = new LinkedHashMap<>();
+        belowPar(par).forEach(bin -> order.put(bin.segment(), fillTo - bin.count()));
+        return Collections.unmodifiableMap(order);
+    }
+
+    private List<Bin> binsWhere(IntPredicate counted) {
         return stock.entrySet().stream()
+                .filter(entry -> counted.test(entry.getValue()))
                 .map(entry -> new Bin(entry.getKey(), entry.getValue()))
                 .sorted(Comparator.comparing(bin -> bin.segment().binCode()))
                 .toList();
@@ -192,7 +225,9 @@ public final class PinKit {
 
     /** A second cabinet holding the same stock, which can be drawn from without touching this one. */
     public PinKit copy() {
-        return new PinKit(name, stock);
+        PinKit copy = new PinKit(name);
+        copy.stock.putAll(stock);
+        return copy;
     }
 
     /**
