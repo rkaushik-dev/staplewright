@@ -18,6 +18,7 @@ import io.github.rkaushikdev.staplewright.persistence.models.ScheduleEntryRow;
 import io.github.rkaushikdev.staplewright.persistence.models.SystemRow;
 import io.github.rkaushikdev.staplewright.progression.Finding;
 import io.github.rkaushikdev.staplewright.progression.KeyingGroup;
+import io.github.rkaushikdev.staplewright.progression.ReviewScope;
 import io.github.rkaushikdev.staplewright.progression.Validation;
 import io.github.rkaushikdev.staplewright.rekey.Quarantine;
 import io.github.rkaushikdev.staplewright.rekey.RetiredBitting;
@@ -173,10 +174,12 @@ public final class SystemService {
         return KeyingMappers.groupsFromRows(systems.groups(system(name).getId()));
     }
 
-    /** Everything wrong with one system, worst first. */
+    /** Everything wrong with one system, worst first, its keying groups judged for crowded chambers. */
     public List<Finding> review(String name) {
         SystemRow system = system(name);
-        return Validation.review(schedule(name), system.getProgressionStep());
+        List<KeyingGroup> groups = List.copyOf(groups(name).values());
+        return Validation.review(
+                schedule(name), ReviewScope.of(system.getProgressionStep()).withGroups(groups));
     }
 
     /** Close a system so nothing else gets drawn on it; once only. */

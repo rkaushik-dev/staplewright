@@ -1,7 +1,9 @@
 package io.github.rkaushikdev.staplewright.progression;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.rkaushikdev.staplewright.InputError;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
 import io.github.rkaushikdev.staplewright.keys.KeySymbol;
 import io.github.rkaushikdev.staplewright.keys.KeyingSchedule;
@@ -58,8 +60,9 @@ class ValidateTest {
         return schedule;
     }
 
-    private static List<Bitting> crowdedKeys() {
-        return List.of(b("442446"), b("642446"), b("242446"), b("842446"));
+    /** A cylinder taking the top key, both grand masters and one master: three cuts in chamber one. */
+    private static KeyingGroup lobby() {
+        return new KeyingGroup("lobby", List.of(sym("GGM"), sym("A"), sym("B"), sym("AA")));
     }
 
     @Test
@@ -184,17 +187,62 @@ class ValidateTest {
     }
 
     @Test
-    void aCrowdedChamberIsReportedAgainstTheGroup() {
-        List<Finding> found = Validation.crowdedChambers(aGoodSchedule(), List.of(crowdedKeys()), 2);
+    void aCrowdedChamberIsReportedAgainstTheGroupByName() {
+        List<Finding> found = Validation.crowdedChambers(aGoodSchedule(), List.of(lobby()), 1);
         assertThat(found.stream().map(Finding::code).toList()).containsExactly("crowded_chamber");
-        assertThat(found.get(0).message()).contains("chamber 1");
+        assertThat(found.get(0).message()).isEqualTo("group lobby wants 2 wafers in chamber 1 and the shop builds 1");
+        assertThat(found.get(0).severity()).isSameAs(Severity.SERIOUS);
     }
 
     @Test
     void aGroupInsideTheLimitIsQuiet() {
-        List<Bitting> keys = List.of(b("442446"), b("642446"));
-        assertThat(Validation.crowdedChambers(aGoodSchedule(), List.of(keys), 2))
+        KeyingGroup pair = new KeyingGroup("pair", List.of(sym("GGM"), sym("A")));
+        assertThat(Validation.crowdedChambers(aGoodSchedule(), List.of(pair), 1))
                 .isEmpty();
+        assertThat(Validation.crowdedChambers(aGoodSchedule(), List.of(lobby())))
+                .isEmpty();
+    }
+
+    @Test
+    void aGroupIsJudgedOnTheKeysCutSoFar() {
+        KeyingSchedule schedule = Systems.smallSchedule();
+        schedule.assign(sym("A"), b("642446"));
+        schedule.assign(sym("B"), b("242446"));
+        assertThat(Validation.crowdedChambers(schedule, List.of(lobby()), 0))
+                .extracting(Finding::message)
+                .containsExactly("group lobby wants 1 wafers in chamber 1 and the shop builds 0");
+        assertThat(Validation.crowdedChambers(Systems.smallSchedule(), List.of(lobby()), 0))
+                .isEmpty();
+    }
+
+    @Test
+    void aReviewWithGroupsCarriesTheCrowdedChambersAndOneWithoutDoesNot() {
+        ReviewScope scope = new ReviewScope(2, Optional.empty(), List.of(lobby()), 1);
+        assertThat(Validation.review(aGoodSchedule(), scope))
+                .extracting(Finding::code)
+                .containsExactly("crowded_chamber");
+        assertThat(Validation.review(aGoodSchedule(), ReviewScope.of(2).withGroups(List.of(lobby()))))
+                .isEmpty();
+        assertThat(Validation.review(aGoodSchedule())).isEmpty();
+    }
+
+    @Test
+    void aReviewAgainstAPlanCarriesTheOffPlanKeys() {
+        KeyingSchedule schedule = force(aGoodSchedule(), "AA1", "621456");
+        ProgressionPlan plan = new ProgressionPlan(Charts.sixPinChart(), b("622446"), List.of(3), 2);
+        assertThat(Validation.review(schedule, ReviewScope.of(2).against(plan)))
+                .extracting(Finding::code)
+                .contains("off_plan");
+        assertThat(Validation.review(schedule, ReviewScope.of(2)))
+                .extracting(Finding::code)
+                .doesNotContain("off_plan");
+    }
+
+    @Test
+    void aReviewScopeThatMakesNoSenseIsRefused() {
+        assertThatThrownBy(() -> ReviewScope.of(0)).isInstanceOf(InputError.class);
+        assertThatThrownBy(() -> new ReviewScope(2, Optional.empty(), List.of(), -1))
+                .isInstanceOf(InputError.class);
     }
 
     @Test
@@ -228,7 +276,7 @@ class ValidateTest {
 
     @Test
     void aFindingWithoutASymbolLeavesItOut() {
-        Map<String, Object> rendered = Validation.crowdedChambers(aGoodSchedule(), List.of(crowdedKeys()), 2)
+        Map<String, Object> rendered = Validation.crowdedChambers(aGoodSchedule(), List.of(lobby()), 1)
                 .get(0)
                 .asDict();
         assertThat(rendered).doesNotContainKey("symbol");

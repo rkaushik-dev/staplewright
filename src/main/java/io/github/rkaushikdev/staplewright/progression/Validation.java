@@ -3,15 +3,14 @@ package io.github.rkaushikdev.staplewright.progression;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
 import io.github.rkaushikdev.staplewright.keys.KeySymbol;
 import io.github.rkaushikdev.staplewright.keys.KeyingSchedule;
+import io.github.rkaushikdev.staplewright.keys.Relations;
 import io.github.rkaushikdev.staplewright.keys.ScheduleEntry;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 /**
  * Reading a whole schedule back and saying what is wrong with it.
@@ -147,33 +146,36 @@ public final class Validation {
     }
 
     /** Chambers asked to break at more depths than the shop builds, three wafers at most. */
-    public static List<Finding> crowdedChambers(KeyingSchedule schedule, List<List<Bitting>> groups) {
+    public static List<Finding> crowdedChambers(KeyingSchedule schedule, List<KeyingGroup> groups) {
         return crowdedChambers(schedule, groups, MOST_WAFERS);
     }
 
     /**
-     * Chambers asked to break at more depths than the shop will build.
+     * Chambers a keying group asks to break at more depths than the shop will build, by group in
+     * the order given and then by chamber.
      *
-     * @param groups the cuts behind each keying group; groups are numbered from one in the messages
+     * <p>Only the keys in a group that have been cut count. A group still waiting on a cut is
+     * reported for that by the uncut check, and its chambers are judged on what is in it so far.
      */
-    public static List<Finding> crowdedChambers(KeyingSchedule schedule, List<List<Bitting>> groups, int mostWafers) {
+    public static List<Finding> crowdedChambers(KeyingSchedule schedule, List<KeyingGroup> groups, int mostWafers) {
         List<Finding> found = new ArrayList<>();
-        for (int index = 1; index <= groups.size(); index++) {
-            List<Bitting> keys = groups.get(index - 1);
-            for (int chamber = 1; chamber <= schedule.chambers(); chamber++) {
-                Set<Integer> depths = new HashSet<>();
-                for (Bitting key : keys) {
-                    depths.add(key.at(chamber));
-                }
-                int breaks = depths.size();
-                if (breaks - 1 > mostWafers) {
+        for (KeyingGroup group : groups) {
+            List<Bitting> keys = group.ordered().stream()
+                    .filter(schedule::contains)
+                    .flatMap(symbol -> schedule.bittingOf(symbol).stream())
+                    .toList();
+            if (keys.isEmpty()) {
+                continue;
+            }
+            Relations.wafersFor(keys.get(0), keys.subList(1, keys.size())).forEach((chamber, breaks) -> {
+                if (breaks.size() - 1 > mostWafers) {
                     found.add(new Finding(
                             "crowded_chamber",
                             Severity.SERIOUS,
-                            "group " + index + " wants " + (breaks - 1) + " wafers in chamber " + chamber
+                            "group " + group.name() + " wants " + (breaks.size() - 1) + " wafers in chamber " + chamber
                                     + " and the shop builds " + mostWafers));
                 }
-            }
+            });
         }
         return List.copyOf(found);
     }
@@ -191,32 +193,30 @@ public final class Validation {
 
     /** Every finding for a two step system, worst first. */
     public static List<Finding> review(KeyingSchedule schedule) {
-        return review(schedule, Optional.empty(), ProgressionPlan.DEFAULT_STEP);
+        return review(schedule, ReviewScope.of(ProgressionPlan.DEFAULT_STEP));
     }
 
     /** Every finding for a system progressed by {@code step}, worst first. */
     public static List<Finding> review(KeyingSchedule schedule, int step) {
-        return review(schedule, Optional.empty(), step);
-    }
-
-    /** Every finding for a two step system, with the change keys checked against a plan. */
-    public static List<Finding> review(KeyingSchedule schedule, ProgressionPlan plan) {
-        return review(schedule, Optional.of(plan), ProgressionPlan.DEFAULT_STEP);
+        return review(schedule, ReviewScope.of(step));
     }
 
     /**
-     * Every finding, worst first, then by symbol and code so the report is stable.
+     * Every finding the scope asks for, worst first, then by symbol and code so the report is
+     * stable.
      *
-     * <p>A finding with no symbol sorts before the symbols at its severity. Crowded chambers are not
-     * part of a review, because they need the keying groups.
+     * <p>A finding with no symbol sorts before the symbols at its severity. Change keys are held
+     * against a plan only when the scope names one, and chambers are judged crowded only for the
+     * keying groups it names.
      */
-    public static List<Finding> review(KeyingSchedule schedule, Optional<ProgressionPlan> plan, int step) {
+    public static List<Finding> review(KeyingSchedule schedule, ReviewScope scope) {
         List<Finding> found = new ArrayList<>();
         found.addAll(duplicateCuts(schedule));
         found.addAll(keysMatchingTheirMaster(schedule));
-        found.addAll(thinSplits(schedule, step));
-        found.addAll(nearNeighbours(schedule, step));
-        plan.ifPresent(drawn -> found.addAll(keysOffPlan(schedule, drawn)));
+        found.addAll(thinSplits(schedule, scope.step()));
+        found.addAll(nearNeighbours(schedule, scope.step()));
+        scope.plan().ifPresent(drawn -> found.addAll(keysOffPlan(schedule, drawn)));
+        found.addAll(crowdedChambers(schedule, scope.groups(), scope.mostWafers()));
         found.addAll(uncutSymbols(schedule));
         found.sort(Comparator.comparing(Finding::severity)
                 .thenComparing(finding -> finding.symbol().orElse(""))
