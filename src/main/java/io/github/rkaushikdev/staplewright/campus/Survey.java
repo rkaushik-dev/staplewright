@@ -101,6 +101,11 @@ public final class Survey implements Iterable<SurveyLine> {
         return lines().stream().filter(SurveyLine::needsWorkFirst).toList();
     }
 
+    /** Doors that break the life safety code, in door order. */
+    public List<SurveyLine> lifeSafety() {
+        return lines().stream().filter(SurveyLine::breaksLifeSafety).toList();
+    }
+
     /** Doors with nothing wrong, in door order. */
     public List<SurveyLine> sound() {
         return lines().stream().filter(SurveyLine::isSound).toList();

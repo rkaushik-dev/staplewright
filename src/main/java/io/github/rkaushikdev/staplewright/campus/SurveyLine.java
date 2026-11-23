@@ -5,11 +5,8 @@ import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.InputError;
 import io.github.rkaushikdev.staplewright.util.Text;
 import java.time.LocalDate;
-import java.util.Collections;
-import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -39,9 +36,6 @@ public record SurveyLine(
         List<Deficiency> deficiencies,
         String note) {
 
-    private static final Set<Deficiency> BLOCKING =
-            Collections.unmodifiableSet(EnumSet.of(Deficiency.WORN_OUT, Deficiency.NO_STRIKE, Deficiency.NO_CYLINDER));
-
     /**
      * A line, refusing one with no opening or no surveyor, and one listing a deficiency twice.
      *
@@ -68,7 +62,12 @@ public record SurveyLine(
 
     /** Whether something has to happen before a rekey is worth booking. */
     public boolean needsWorkFirst() {
-        return deficiencies.stream().anyMatch(BLOCKING::contains);
+        return deficiencies.stream().anyMatch(Deficiency::blocksRekey);
+    }
+
+    /** Whether the door breaks the life safety code, which outranks every other thing found. */
+    public boolean breaksLifeSafety() {
+        return deficiencies.stream().anyMatch(Deficiency::isLifeSafety);
     }
 
     /** Whether the hardware is good or merely worn, with nothing found. */

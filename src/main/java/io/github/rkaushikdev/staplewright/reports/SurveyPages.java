@@ -15,7 +15,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -37,9 +37,6 @@ public final class SurveyPages {
 
     /** How many buildings the worst list names unless asked for more or fewer. */
     public static final int WORST_LIMIT = 5;
-
-    private static final Set<Deficiency> BLOCKING =
-            Set.of(Deficiency.WORN_OUT, Deficiency.NO_STRIKE, Deficiency.NO_CYLINDER);
 
     private SurveyPages() {}
 
@@ -72,19 +69,25 @@ public final class SurveyPages {
         return List.copyOf(lines);
     }
 
+    /**
+     * The doors that break the life safety code, by room where the door is on record. These are
+     * not rekey work and they do not wait for one.
+     */
+    public static List<String> lifeSafety(Survey survey, OpeningSchedule openings) {
+        return listOrNothing(
+                survey.lifeSafety(),
+                "no door in this building needs a key to get out",
+                " doors break the life safety code",
+                line -> Text.left(StatisticsPages.labelOf(openings, line.opening()), OPENING_WIDTH) + faults(line));
+    }
+
     /** The doors that need other work before a rekey is worth booking, by room where the door is on record. */
     public static List<String> blockingWork(Survey survey, OpeningSchedule openings) {
-        List<SurveyLine> blocked = survey.blocking();
-        if (blocked.isEmpty()) {
-            return List.of("nothing blocks a rekey of this building");
-        }
-        List<String> lines = new ArrayList<>();
-        lines.add(blocked.size() + " doors need work before a rekey");
-        for (SurveyLine line : blocked) {
-            String where = StatisticsPages.labelOf(openings, line.opening());
-            lines.add("  " + Text.left(where, OPENING_WIDTH) + faults(line));
-        }
-        return List.copyOf(lines);
+        return listOrNothing(
+                survey.blocking(),
+                "nothing blocks a rekey of this building",
+                " doors need work before a rekey",
+                line -> Text.left(StatisticsPages.labelOf(openings, line.opening()), OPENING_WIDTH) + faults(line));
     }
 
     /** Keyed doors in the building nobody looked at, which is how a survey lies. */
@@ -93,15 +96,22 @@ public final class SurveyPages {
                 .filter(Opening::isKeyed)
                 .map(Opening::number)
                 .toList();
-        List<String> missed = survey.coverage(wanted);
-        if (missed.isEmpty()) {
-            return List.of("every keyed door in " + survey.building() + " was walked");
+        return listOrNothing(
+                survey.coverage(wanted),
+                "every keyed door in " + survey.building() + " was walked",
+                " doors not walked",
+                number -> number);
+    }
+
+    /** One line saying there is nothing, or a count and an indented line each. */
+    private static <T> List<String> listOrNothing(
+            List<T> items, String nothing, String counted, Function<T, String> line) {
+        if (items.isEmpty()) {
+            return List.of(nothing);
         }
         List<String> lines = new ArrayList<>();
-        lines.add(missed.size() + " doors not walked");
-        for (String number : missed) {
-            lines.add("  " + number);
-        }
+        lines.add(items.size() + counted);
+        items.forEach(item -> lines.add("  " + line.apply(item)));
         return List.copyOf(lines);
     }
 
@@ -125,6 +135,8 @@ public final class SurveyPages {
         List<String> lines = new ArrayList<>();
         lines.add(survey.building() + " surveyed " + survey.walkedOn() + ", " + survey.size() + " doors");
         lines.add("walked by " + (walked.isEmpty() ? "nobody named" : walked));
+        lines.add("");
+        lines.addAll(lifeSafety(survey, openings));
         lines.add("");
         lines.addAll(blockingWork(survey, openings));
         lines.add("");
@@ -158,7 +170,7 @@ public final class SurveyPages {
         for (Survey survey : surveys) {
             for (SurveyLine line : survey.blocking()) {
                 for (Deficiency item : line.deficiencies()) {
-                    if (BLOCKING.contains(item)) {
+                    if (item.blocksRekey()) {
                         counts.merge(item.value(), 1, Integer::sum);
                     }
                 }

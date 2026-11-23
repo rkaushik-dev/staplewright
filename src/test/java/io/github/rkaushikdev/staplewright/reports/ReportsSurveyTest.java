@@ -9,6 +9,7 @@ import io.github.rkaushikdev.staplewright.campus.Survey;
 import io.github.rkaushikdev.staplewright.campus.SurveyLine;
 import io.github.rkaushikdev.staplewright.util.Text;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -161,5 +162,49 @@ class ReportsSurveyTest {
         Survey survey = new Survey("VOS", WALKED);
         survey.record(aLine("VOS-311"));
         assertThat(SurveyPages.blockingDeficiencies(List.of(survey))).isEmpty();
+    }
+
+    @Test
+    void aDoorThatNeedsAKeyToGetOutLeadsTheReport() {
+        Survey survey = aSurvey();
+        survey.record(aLine("MOO-001", Condition.GOOD, Deficiency.KEYED_EGRESS));
+        List<String> lines = SurveyPages.surveyReport(survey, aCampus());
+        int safety = lines.indexOf("1 doors break the life safety code");
+        int blocking = lines.indexOf("3 doors need work before a rekey");
+        assertThat(safety).isEqualTo(3);
+        assertThat(blocking).isGreaterThan(safety);
+        assertThat(lines.get(safety + 1)).startsWith("  ").endsWith("needs a key to get out");
+    }
+
+    @Test
+    void aBuildingWithNoKeyedEgressSaysSo() {
+        assertThat(SurveyPages.lifeSafety(aSurvey(), aCampus()))
+                .containsExactly("no door in this building needs a key to get out");
+        assertThat(SurveyPages.surveyReport(aSurvey(), aCampus()))
+                .contains("no door in this building needs a key to get out");
+    }
+
+    @Test
+    void keyedEgressIsLifeSafetyAndBlocksTheRekeyAndNothingElseIsLifeSafety() {
+        SurveyLine line = aLine("MOO-001", Condition.GOOD, Deficiency.KEYED_EGRESS);
+        assertThat(line.breaksLifeSafety()).isTrue();
+        assertThat(line.needsWorkFirst()).isTrue();
+        assertThat(line.isSound()).isFalse();
+        assertThat(Arrays.stream(Deficiency.values()).filter(Deficiency::isLifeSafety))
+                .containsExactly(Deficiency.KEYED_EGRESS);
+        assertThat(Arrays.stream(Deficiency.values()).filter(Deficiency::blocksRekey))
+                .containsExactlyInAnyOrder(
+                        Deficiency.WORN_OUT, Deficiency.NO_STRIKE, Deficiency.NO_CYLINDER, Deficiency.KEYED_EGRESS);
+        assertThat(aLine("MOO-214", Condition.FAILING, Deficiency.WORN_OUT).breaksLifeSafety())
+                .isFalse();
+    }
+
+    @Test
+    void theSurveyListsItsLifeSafetyDoorsInDoorOrder() {
+        Survey survey = aSurvey();
+        survey.record(aLine("MOO-310", Condition.WORN, Deficiency.KEYED_EGRESS));
+        survey.record(aLine("MOO-002", Condition.GOOD, Deficiency.KEYED_EGRESS, Deficiency.UNKNOWN_KEY));
+        assertThat(survey.lifeSafety()).extracting(SurveyLine::opening).containsExactly("MOO-002", "MOO-310");
+        assertThat(Deficiency.fromValue("needs a key to get out")).isSameAs(Deficiency.KEYED_EGRESS);
     }
 }

@@ -110,6 +110,7 @@ public final class ReportIndex {
             new Page("stock", "stock_report", "factory", "the whole blank stock pack"),
             new Page("survey", "condition_table", "management", "how many doors are in each state"),
             new Page("survey", "deficiency_table", "management", "what a walk round found"),
+            new Page("survey", "life_safety", "management", "doors that need a key to get out"),
             new Page("survey", "blocking_work", "shop", "doors that need work before a rekey"),
             new Page("survey", "unwalked", "shop", "doors nobody looked at"),
             new Page("survey", "inventory", "shop", "every door on a survey"),
