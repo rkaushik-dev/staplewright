@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.rkaushikdev.staplewright.InputError;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
+import io.github.rkaushikdev.staplewright.keys.KeySymbol;
+import io.github.rkaushikdev.staplewright.keys.KeyingSchedule;
 import io.github.rkaushikdev.staplewright.support.Charts;
+import io.github.rkaushikdev.staplewright.support.Systems;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -206,5 +209,64 @@ class CapacityTest {
     void aPlanWithNothingLeftToWidenOffersNothing() {
         ProgressionPlan plan = aPlan(List.of(1, 2, 3, 4, 5, 6), 1);
         assertThat(Capacity.wideningOptions(plan)).isEmpty();
+    }
+
+    private static List<Allocation> twoBlocks() {
+        return Blocks.byBlocks(new KeyBittingArray(aPlan(List.of(2, 4, 6), 2)), List.of(sym("AA"), sym("AB")), 10);
+    }
+
+    private static KeySymbol sym(String text) {
+        return KeySymbol.parse(text);
+    }
+
+    @Test
+    void eachMasterIsCountedAgainstTheKeysItWasGiven() {
+        List<Allocation> blocks = twoBlocks();
+        KeyingSchedule schedule = Systems.smallSchedule();
+        schedule.assign(sym("AA1"), blocks.get(0).keys().get(0));
+        schedule.assign(sym("AA2"), blocks.get(0).keys().get(1));
+        schedule.assign(sym("AB1"), blocks.get(1).keys().get(0));
+        List<MasterHeadroom> found = Capacity.headroomByMaster(schedule, blocks);
+        assertThat(found).extracting(MasterHeadroom::master).containsExactly(sym("AA"), sym("AB"));
+        assertThat(found.get(0).room()).isEqualTo(new Headroom(10, 10, 2, 2));
+        assertThat(found.get(1).room()).isEqualTo(new Headroom(10, 10, 1, 2));
+        assertThat(found.get(0).describe()).isEqualTo("AA: 2 of 10 cut, 8 free, reserve 2");
+    }
+
+    @Test
+    void aBorrowedKeyComesOutOfTheBlockItWasCutFrom() {
+        List<Allocation> blocks = twoBlocks();
+        KeyingSchedule schedule = Systems.smallSchedule();
+        schedule.assign(sym("AB1"), blocks.get(0).keys().get(0));
+        schedule.assign(sym("AB2"), blocks.get(0).keys().get(1));
+        List<MasterHeadroom> found = Capacity.headroomByMaster(schedule, blocks, 0.0);
+        assertThat(found.get(0).master()).isEqualTo(sym("AA"));
+        assertThat(found.get(0).room().used()).isEqualTo(2);
+        assertThat(found.get(1).room().used()).isZero();
+    }
+
+    @Test
+    void theMasterNearestRunningOutComesFirstAndSaysSo() {
+        List<Allocation> blocks = twoBlocks();
+        KeyingSchedule schedule = Systems.smallSchedule();
+        schedule.assign(sym("AB1"), blocks.get(1).keys().get(0));
+        schedule.assign(sym("AB2"), blocks.get(1).keys().get(1));
+        List<MasterHeadroom> found = Capacity.headroomByMaster(schedule, blocks, 0.9);
+        assertThat(found).extracting(MasterHeadroom::master).containsExactly(sym("AB"), sym("AA"));
+        assertThat(found.get(0).underReserve()).isTrue();
+        assertThat(found.get(1).underReserve()).isFalse();
+    }
+
+    @Test
+    void aReserveOfAWholeAllocationIsRefused() {
+        assertThatThrownBy(() -> Capacity.headroomByMaster(Systems.smallSchedule(), twoBlocks(), 1.0))
+                .isInstanceOf(InputError.class);
+    }
+
+    @Test
+    void aStepThePlanCannotDropToIsNotOffered() {
+        assertThat(Capacity.wideningOptions(aPlan(1)))
+                .extracting(WideningOption::name)
+                .noneMatch(name -> name.startsWith("progress 0"));
     }
 }

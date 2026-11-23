@@ -3,11 +3,16 @@ package io.github.rkaushikdev.staplewright.progression;
 import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.InputError;
 import io.github.rkaushikdev.staplewright.ProgressionError;
+import io.github.rkaushikdev.staplewright.keys.Bitting;
+import io.github.rkaushikdev.staplewright.keys.KeyingSchedule;
 import io.github.rkaushikdev.staplewright.spec.CuttingRules;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -51,11 +56,49 @@ public final class Capacity {
         if (used < 0) {
             throw new InputError("a count of cut keys is not negative", Facts.of("used", used));
         }
+        return new Headroom(
+                array.capacity(), array.usableCount(), used, reserveOf(array.usableCount(), reserveFraction));
+    }
+
+    private static int reserveOf(int cuttable, double reserveFraction) {
         if (!(0 <= reserveFraction && reserveFraction < 1)) {
             throw new InputError("a reserve is a fraction under one", Facts.of("reserve", reserveFraction));
         }
-        int wanted = (int) (array.usableCount() * reserveFraction);
-        return new Headroom(array.capacity(), array.usableCount(), used, wanted);
+        return (int) (cuttable * reserveFraction);
+    }
+
+    /** What each master has left of the keys it was given, against the usual reserve. */
+    public static List<MasterHeadroom> headroomByMaster(KeyingSchedule schedule, List<Allocation> allocations) {
+        return headroomByMaster(schedule, allocations, DEFAULT_RESERVE);
+    }
+
+    /**
+     * What each master has left of the keys it was given, the one nearest running out first and
+     * then by symbol.
+     *
+     * <p>A system with room in it can still have a department about to borrow a key from the next
+     * block, which is how the block structure gets lost. A key counts against the allocation it was
+     * cut from, whoever it was cut for, because a borrowed key is gone from the block it came out of.
+     *
+     * @throws InputError for a reserve outside nought up to but not including one
+     */
+    public static List<MasterHeadroom> headroomByMaster(
+            KeyingSchedule schedule, List<Allocation> allocations, double reserveFraction) {
+        Set<Bitting> cut = schedule.entries().stream()
+                .flatMap(entry -> entry.bitting().stream())
+                .collect(Collectors.toSet());
+        return allocations.stream()
+                .map(allocation -> {
+                    int used = (int)
+                            allocation.keys().stream().filter(cut::contains).count();
+                    int reserve = reserveOf(allocation.size(), reserveFraction);
+                    return new MasterHeadroom(
+                            allocation.symbol(), new Headroom(allocation.size(), allocation.size(), used, reserve));
+                })
+                .sorted(Comparator.comparingInt(
+                                (MasterHeadroom line) -> line.room().reserveLeft())
+                        .thenComparing(MasterHeadroom::master))
+                .toList();
     }
 
     /**
@@ -104,41 +147,24 @@ public final class Capacity {
         int current = new KeyBittingArray(plan, rules).usableCount();
         int stepMils = plan.chart().incrementMils();
         List<WideningOption> found = new ArrayList<>();
-
         for (int chamber : plan.constants()) {
-            Optional<ProgressionPlan> wider = attempt(plan, chamber);
-            if (wider.isEmpty()) {
-                continue;
-            }
-            int count = new KeyBittingArray(wider.get(), rules).usableCount();
-            if (count <= current) {
-                continue;
-            }
-            found.add(new WideningOption(
-                    "progress chamber " + chamber,
-                    count,
-                    1,
-                    plan.step() * stepMils,
-                    "one more wafer in every cylinder"));
+            widerThan(current, attempt(plan, () -> moving(plan, chamber)), rules)
+                    .ifPresent(count -> found.add(new WideningOption(
+                            "progress chamber " + chamber,
+                            count,
+                            1,
+                            plan.step() * stepMils,
+                            "one more wafer in every cylinder")));
         }
-
         if (plan.step() > 1) {
-            int count;
-            try {
-                count = new KeyBittingArray(plan.withStep(plan.step() - 1), rules).usableCount();
-            } catch (ProgressionError cannot) {
-                count = current;
-            }
-            if (count > current) {
-                found.add(new WideningOption(
-                        "progress " + (plan.step() - 1) + " steps instead of " + plan.step(),
-                        count,
-                        0,
-                        (plan.step() - 1) * stepMils,
-                        "thinner wafers, which the bench will argue about"));
-            }
+            widerThan(current, attempt(plan, () -> plan.withStep(plan.step() - 1)), rules)
+                    .ifPresent(count -> found.add(new WideningOption(
+                            "progress " + (plan.step() - 1) + " steps instead of " + plan.step(),
+                            count,
+                            0,
+                            (plan.step() - 1) * stepMils,
+                            "thinner wafers, which the bench will argue about")));
         }
-
         found.sort(Comparator.comparing(WideningOption::capacity, Comparator.reverseOrder())
                 .thenComparing(WideningOption::name));
         return List.copyOf(found);
@@ -152,14 +178,23 @@ public final class Capacity {
                         .thenComparing(WideningOption::wafersAdded, Comparator.reverseOrder()));
     }
 
-    private static Optional<ProgressionPlan> attempt(ProgressionPlan plan, int chamber) {
-        List<Integer> moving = Stream.concat(plan.progressed().stream(), Stream.of(chamber))
+    private static ProgressionPlan moving(ProgressionPlan plan, int chamber) {
+        return plan.withProgressed(Stream.concat(plan.progressed().stream(), Stream.of(chamber))
                 .sorted()
-                .toList();
+                .toList());
+    }
+
+    private static Optional<ProgressionPlan> attempt(ProgressionPlan plan, Supplier<ProgressionPlan> change) {
         try {
-            return Optional.of(plan.withProgressed(moving));
+            return Optional.of(change.get());
         } catch (ProgressionError cannot) {
             return Optional.empty();
         }
+    }
+
+    /** How many keys the changed plan holds, when it is a plan at all and holds more than now. */
+    private static Optional<Integer> widerThan(int current, Optional<ProgressionPlan> changed, CuttingRules rules) {
+        return changed.map(wider -> new KeyBittingArray(wider, rules).usableCount())
+                .filter(count -> count > current);
     }
 }
