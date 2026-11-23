@@ -28,6 +28,19 @@ public record Calibration(int spaceOffsetMils, int depthOffsetMils) {
         return new Calibration(spaceOffsetMils, value);
     }
 
+    /**
+     * The offsets that cancel what a test key cut under these ones measured.
+     *
+     * <p>A key whose cuts landed two mils toward the tip calls for the carriage to be set two mils
+     * back, on top of whatever it was set to already.
+     *
+     * @param spaceErrorMils how far along the blade the test cuts landed from their chart spaces
+     * @param depthErrorMils how far from the chart dimension the test cuts came down
+     */
+    public Calibration correctedBy(int spaceErrorMils, int depthErrorMils) {
+        return new Calibration(spaceOffsetMils - spaceErrorMils, depthOffsetMils - depthErrorMils);
+    }
+
     /** Whether the machine has nothing wrong with it. */
     public boolean isTrue() {
         return spaceOffsetMils == 0 && depthOffsetMils == 0;

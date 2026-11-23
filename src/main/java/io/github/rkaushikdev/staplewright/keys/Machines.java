@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 /**
@@ -100,13 +99,55 @@ public final class Machines {
      */
     public static Optional<Integer> drift(DepthAndSpaceChart chart, Bitting wanted, List<Integer> dimensions) {
         requireLength(chart, dimensions);
-        Set<Integer> errors = IntStream.rangeClosed(1, dimensions.size())
+        return constantOffset(IntStream.rangeClosed(1, dimensions.size())
                 .mapToObj(chamber -> dimensions.get(chamber - 1) - chart.dimensionFor(wanted.at(chamber)))
-                .collect(Collectors.toSet());
-        if (errors.size() != 1) {
+                .toList());
+    }
+
+    /**
+     * The constant error along the blade, if there is one: how far from its chart space every cut
+     * landed, measured in mils from the gauge.
+     *
+     * <p>A carriage out of calibration walks every cut the same way by the same amount. Cuts that
+     * wander by different amounts are a loose key in the jaw, which the operator fixes by clamping it
+     * again rather than by touching the carriage, so that comes back empty.
+     *
+     * @throws InputError for a key that is not as long as the family
+     */
+    public static Optional<Integer> spacingDrift(DepthAndSpaceChart chart, List<Integer> positions) {
+        requireLength(chart, positions);
+        return constantOffset(IntStream.rangeClosed(1, positions.size())
+                .mapToObj(chamber -> positions.get(chamber - 1) - chart.spaceFor(chamber))
+                .toList());
+    }
+
+    /**
+     * The offsets to dial in after measuring a test key, given the offsets it was cut with.
+     *
+     * <p>The test key was cut to {@code wanted} under {@code current}, so whatever constant error is
+     * left on it is the part the current offsets did not take out. Only a constant error moves an
+     * offset; a key that came out wrong in one place leaves the machine alone.
+     *
+     * @param dimensions the measured blade dimension in each chamber, bow first, in mils
+     * @param positions the measured position of each cut from the gauge, bow first, in mils
+     */
+    public static Calibration recalibrate(
+            DepthAndSpaceChart chart,
+            Calibration current,
+            Bitting wanted,
+            List<Integer> dimensions,
+            List<Integer> positions) {
+        int depthError = drift(chart, wanted, dimensions).orElse(0);
+        int spaceError = spacingDrift(chart, positions).orElse(0);
+        return current.correctedBy(spaceError, depthError);
+    }
+
+    private static Optional<Integer> constantOffset(List<Integer> errors) {
+        Set<Integer> distinct = Set.copyOf(errors);
+        if (distinct.size() != 1) {
             return Optional.empty();
         }
-        int only = errors.iterator().next();
+        int only = distinct.iterator().next();
         return only == 0 ? Optional.empty() : Optional.of(only);
     }
 

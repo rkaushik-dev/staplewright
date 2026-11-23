@@ -9,7 +9,12 @@ import io.github.rkaushikdev.staplewright.spec.DepthAndSpaceChart;
 import io.github.rkaushikdev.staplewright.support.Charts;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class MachineTest {
 
@@ -138,23 +143,63 @@ class MachineTest {
         assertThat(Machines.verify(Charts.sixPinChart(), b("342156"), dims)).containsExactly(1, 5);
     }
 
-    @Test
-    void aConstantErrorAcrossAKeyIsTheMachine() {
-        List<Integer> dims = shifted(dimensionsFor("342156"), 2);
-        assertThat(Machines.drift(Charts.sixPinChart(), b("342156"), dims)).contains(2);
+    /** Each case: the error added in every chamber, the error added on top in chamber three, the drift. */
+    static Stream<Arguments> errors() {
+        return Stream.of(
+                Arguments.of(2, 0, Optional.of(2)),
+                Arguments.of(-3, 0, Optional.of(-3)),
+                Arguments.of(0, 0, Optional.empty()),
+                Arguments.of(0, 4, Optional.empty()),
+                Arguments.of(2, 1, Optional.empty()));
+    }
+
+    @ParameterizedTest
+    @MethodSource("errors")
+    void onlyAConstantErrorAcrossAKeyIsTheMachine(int everywhere, int third, Optional<Integer> wanted) {
+        List<Integer> dims = new ArrayList<>(shifted(dimensionsFor("342156"), everywhere));
+        dims.set(2, dims.get(2) + third);
+        assertThat(Machines.drift(Charts.sixPinChart(), b("342156"), dims)).isEqualTo(wanted);
+        List<Integer> positions = new ArrayList<>(shifted(Charts.sixPinChart().spaces(), everywhere));
+        positions.set(2, positions.get(2) + third);
+        assertThat(Machines.spacingDrift(Charts.sixPinChart(), positions)).isEqualTo(wanted);
     }
 
     @Test
-    void aKeyCutTrueHasNoDrift() {
-        assertThat(Machines.drift(Charts.sixPinChart(), b("342156"), dimensionsFor("342156")))
-                .isEmpty();
+    void spacingDriftNeedsAKeyOfTheRightLength() {
+        assertThatThrownBy(() -> Machines.spacingDrift(Charts.sixPinChart(), List.of(231, 387)))
+                .isInstanceOf(InputError.class);
     }
 
     @Test
-    void oneBadChamberIsNotAMachineFault() {
+    void aTestKeyCutByAWanderingCarriageDialsItBack() {
+        List<Integer> positions = shifted(Charts.sixPinChart().spaces(), 3);
+        List<Integer> dims = shifted(dimensionsFor("342156"), -2);
+        Calibration corrected =
+                Machines.recalibrate(Charts.sixPinChart(), Calibration.TRUE, b("342156"), dims, positions);
+        assertThat(corrected).isEqualTo(new Calibration(-3, 2));
+        CutCard card = Machines.cutCard(Charts.sixPinChart(), b("342156"), corrected);
+        assertThat(card.instructions().get(0).spaceMils())
+                .isEqualTo(Charts.sixPinChart().spaceFor(1) - 3);
+    }
+
+    @Test
+    void recalibratingAddsToTheOffsetsAlreadyDialledIn() {
+        Calibration current = new Calibration(-3, 2);
+        List<Integer> positions = shifted(Charts.sixPinChart().spaces(), -1);
+        Calibration corrected =
+                Machines.recalibrate(Charts.sixPinChart(), current, b("342156"), dimensionsFor("342156"), positions);
+        assertThat(corrected).isEqualTo(new Calibration(-2, 2));
+    }
+
+    @Test
+    void aTestKeyWrongInOnePlaceLeavesTheMachineAlone() {
         List<Integer> dims = dimensionsFor("342156");
-        dims.set(2, dims.get(2) + 4);
-        assertThat(Machines.drift(Charts.sixPinChart(), b("342156"), dims)).isEmpty();
+        dims.set(4, dims.get(4) + 15);
+        List<Integer> positions = new ArrayList<>(Charts.sixPinChart().spaces());
+        positions.set(1, positions.get(1) + 6);
+        Calibration current = new Calibration(1, 1);
+        assertThat(Machines.recalibrate(Charts.sixPinChart(), current, b("342156"), dims, positions))
+                .isEqualTo(current);
     }
 
     @Test
