@@ -193,8 +193,8 @@ class ServiceIncidentsTest {
 
     @Test
     void anIncidentThatCallsForNoWorkRaisesNoOrder() {
-        IncidentService service =
-                aService(new ScopePolicy().withIgnoreBelowOpenings(10).withAlwaysRekeyMasters(false));
+        IncidentService service = aService(
+                new ScopePolicy().with(scope -> scope.ignoreBelowOpenings(10).alwaysRekeyMasters(false)));
         IncidentRow row = service.report("41207", Cause.LOST, WHEN);
         assertThatThrownBy(() -> service.raiseOrder(row.getNumber())).isInstanceOf(ConflictError.class);
     }

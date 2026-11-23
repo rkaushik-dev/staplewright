@@ -58,14 +58,7 @@ public record ScopeDecision(
     /** Read an assessment and say what work it justifies under one policy. */
     public static ScopeDecision decide(Assessment assessment, CoverageMap coverage, ScopePolicy policy) {
         KeySymbol symbol = assessment.incident().keySymbol();
-        String forced = "";
-        if (policy.alwaysRekeyMasters() && !symbol.isChangeKey()) {
-            forced = "a master is missing";
-        } else if (policy.alwaysRekeyExterior() && assessment.touchesOutside()) {
-            forced = "an exterior door is exposed";
-        } else if (assessment.incident().cause() == Cause.STOLEN) {
-            forced = "the key was taken rather than lost";
-        }
+        String forced = forcedBy(assessment, policy);
 
         if (forced.isEmpty() && assessment.openingCount() <= policy.ignoreBelowOpenings()) {
             return new ScopeDecision(Scope.NOTHING, List.of(), List.of(), "under the threshold the shop acts on");
@@ -82,6 +75,29 @@ public record ScopeDecision(
             reason = reason + ", over the cap of " + policy.cylinderCap().get();
         }
         return new ScopeDecision(scopeFor(coverage, serials), closure.symbols(), serials, reason, over);
+    }
+
+    /**
+     * Why the work goes ahead whatever the threshold says, or nothing when it does not have to.
+     *
+     * <p>A missing master and an exposed outside door come first, when policy says they force it.
+     * After those it is how the key went. A theft forces the work, and so does a key copied without
+     * a signature, because nobody knows how many of it are out. A key a leaver never handed back is
+     * a lost key unless policy says the shop treats it as taken.
+     */
+    private static String forcedBy(Assessment assessment, ScopePolicy policy) {
+        if (policy.alwaysRekeyMasters() && !assessment.incident().keySymbol().isChangeKey()) {
+            return "a master is missing";
+        }
+        if (policy.alwaysRekeyExterior() && assessment.touchesOutside()) {
+            return "an exterior door is exposed";
+        }
+        return switch (assessment.incident().cause()) {
+            case STOLEN -> "the key was taken rather than lost";
+            case DUPLICATED -> "copies were cut that nobody signed for";
+            case UNRETURNED -> policy.rekeyUnreturned() ? "a leaver never handed the key back" : "";
+            case LOST, UNACCOUNTED -> "";
+        };
     }
 
     /** Name the reach of a set of cylinders the way a work order names it. */

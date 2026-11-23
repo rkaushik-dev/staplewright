@@ -126,14 +126,14 @@ class ScopeTest {
 
     @Test
     void aSmallIncidentUnderTheThresholdIsLeftAlone() {
-        ScopeDecision found = decisionFor("AA1", policy -> policy.withIgnoreBelowOpenings(3));
+        ScopeDecision found = decisionFor("AA1", policy -> policy.with(scope -> scope.ignoreBelowOpenings(3)));
         assertThat(found.doesNothing()).isTrue();
         assertThat(found.reason()).contains("threshold");
     }
 
     @Test
     void aMasterIsRekeyedEvenUnderTheThreshold() {
-        ScopeDecision found = decisionFor("AA", "41209", policy -> policy.withIgnoreBelowOpenings(10));
+        ScopeDecision found = decisionFor("AA", "41209", policy -> policy.with(scope -> scope.ignoreBelowOpenings(10)));
         assertThat(found.doesNothing()).isFalse();
         assertThat(found.reason()).contains("master");
     }
@@ -141,7 +141,9 @@ class ScopeTest {
     @Test
     void anExteriorDoorForcesTheWorkThroughTheThreshold() {
         ScopeDecision found = decisionFor(
-                "A", "41210", policy -> policy.withIgnoreBelowOpenings(10).withAlwaysRekeyMasters(false));
+                "A",
+                "41210",
+                policy -> policy.with(scope -> scope.ignoreBelowOpenings(10).alwaysRekeyMasters(false)));
         assertThat(found.reason()).contains("exterior");
     }
 
@@ -149,10 +151,9 @@ class ScopeTest {
     void aShopThatDoesNotCareAboutExteriorsCanSaySo() {
         CoverageMap coverage = aCoverage();
         Assessment found = Assessment.assess(anIncident("A", "41210"), coverage, aLedger());
-        ScopePolicy policy = new ScopePolicy()
-                .withAlwaysRekeyMasters(false)
-                .withAlwaysRekeyExterior(false)
-                .withIgnoreBelowOpenings(10);
+        ScopePolicy policy = new ScopePolicy().with(scope -> scope.alwaysRekeyMasters(false)
+                .alwaysRekeyExterior(false)
+                .ignoreBelowOpenings(10));
         assertThat(ScopeDecision.decide(found, coverage, policy).doesNothing()).isTrue();
     }
 
@@ -162,13 +163,54 @@ class ScopeTest {
         Incident incident =
                 new Incident("I-2025-004", "41207", "AA1", Cause.STOLEN, WHEN, "kmaki", "taken from a coat");
         Assessment found = Assessment.assess(incident, coverage, aLedger());
-        ScopePolicy policy = new ScopePolicy().withIgnoreBelowOpenings(10);
+        ScopePolicy policy = new ScopePolicy().with(scope -> scope.ignoreBelowOpenings(10));
         assertThat(ScopeDecision.decide(found, coverage, policy).reason()).contains("taken");
+    }
+
+    private static ScopeDecision underAHighThreshold(Cause cause, UnaryOperator<ScopePolicy> policyBits) {
+        CoverageMap coverage = aCoverage();
+        Incident incident = new Incident("I-2025-004", "41207", "AA1", cause, WHEN, "kmaki", "reported at the counter");
+        Assessment found = Assessment.assess(incident, coverage, aLedger());
+        ScopePolicy policy = policyBits.apply(new ScopePolicy().with(scope -> scope.ignoreBelowOpenings(10)));
+        return ScopeDecision.decide(found, coverage, policy);
+    }
+
+    @Test
+    void aKeyCopiedWithoutASignatureIsActedOnWhateverTheThresholdSays() {
+        ScopeDecision found = underAHighThreshold(Cause.DUPLICATED, policy -> policy);
+        assertThat(found.doesNothing()).isFalse();
+        assertThat(found.reason()).isEqualTo("copies were cut that nobody signed for");
+        assertThat(found.cylinders()).containsExactly("C-1001", "C-1002");
+    }
+
+    @Test
+    void anUnreturnedKeyIsOnlyLostUnlessPolicySaysOtherwise() {
+        assertThat(underAHighThreshold(Cause.UNRETURNED, policy -> policy).doesNothing())
+                .isTrue();
+        ScopeDecision strict =
+                underAHighThreshold(Cause.UNRETURNED, policy -> policy.with(scope -> scope.rekeyUnreturned(true)));
+        assertThat(strict.doesNothing()).isFalse();
+        assertThat(strict.reason()).isEqualTo("a leaver never handed the key back");
+    }
+
+    @Test
+    void aLostOrUnaccountedKeyUnderTheThresholdIsLeftAlone() {
+        assertThat(underAHighThreshold(Cause.LOST, policy -> policy.with(scope -> scope.rekeyUnreturned(true)))
+                        .doesNothing())
+                .isTrue();
+        assertThat(underAHighThreshold(Cause.UNACCOUNTED, policy -> policy).reason())
+                .isEqualTo("under the threshold the shop acts on");
+    }
+
+    @Test
+    void aPolicyBuiltWithNothingChangedIsTheSamePolicy() {
+        assertThat(new ScopePolicy().with(scope -> scope)).isEqualTo(ScopePolicy.DEFAULT);
+        assertThat(ScopePolicy.DEFAULT.rekeyUnreturned()).isFalse();
     }
 
     @Test
     void goingOverTheCapIsFlaggedRatherThanRefused() {
-        ScopeDecision found = decisionFor("GGM", "41211", policy -> policy.withCylinderCap(4));
+        ScopeDecision found = decisionFor("GGM", "41211", policy -> policy.with(scope -> scope.cylinderCap(4)));
         assertThat(found.overCap()).isTrue();
         assertThat(found.reason()).contains("cap of 4");
         assertThat(found.cylinderCount()).isEqualTo(6);
@@ -176,7 +218,8 @@ class ScopeTest {
 
     @Test
     void stayingUnderTheCapIsNotFlagged() {
-        assertThat(decisionFor("AA1", policy -> policy.withCylinderCap(4)).overCap())
+        assertThat(decisionFor("AA1", policy -> policy.with(scope -> scope.cylinderCap(4)))
+                        .overCap())
                 .isFalse();
     }
 
@@ -187,8 +230,8 @@ class ScopeTest {
     }
 
     static Stream<Supplier<ScopePolicy>> aPolicyThatContradictsItselfIsRefused() {
-        return Stream.of(
-                () -> new ScopePolicy().withIgnoreBelowOpenings(-1), () -> new ScopePolicy().withCylinderCap(0));
+        return Stream.of(() -> new ScopePolicy().with(scope -> scope.ignoreBelowOpenings(-1)), () -> new ScopePolicy()
+                .with(scope -> scope.cylinderCap(0)));
     }
 
     @ParameterizedTest

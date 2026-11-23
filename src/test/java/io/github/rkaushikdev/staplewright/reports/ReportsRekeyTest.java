@@ -104,7 +104,8 @@ class ReportsRekeyTest {
 
     @Test
     void goingOverTheCapAsksForASignature() {
-        ScopeDecision decision = thePieces(policy -> policy.withCylinderCap(1)).decision();
+        ScopeDecision decision =
+                thePieces(policy -> policy.with(scope -> scope.cylinderCap(1))).decision();
         assertThat(RekeyPages.scopeSheet(decision)).anyMatch(line -> line.contains("wants a signature"));
     }
 
