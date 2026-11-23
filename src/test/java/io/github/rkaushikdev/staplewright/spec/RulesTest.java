@@ -61,19 +61,19 @@ class RulesTest {
 
     @Test
     void aRunExactlyAtTheLimitPasses() {
-        assertThat(Rules.checkRuns(new CuttingRules().withMaxRun(3), b("144426")))
+        assertThat(Rules.checkRuns(new CuttingRules().with(policy -> policy.maxRun(3)), b("144426")))
                 .isEmpty();
     }
 
     @Test
     void twoSeparateRunsAreTwoComplaints() {
-        List<CutViolation> found = Rules.checkRuns(new CuttingRules().withMaxRun(1), b("113355"));
+        List<CutViolation> found = Rules.checkRuns(new CuttingRules().with(policy -> policy.maxRun(1)), b("113355"));
         assertThat(chambers(found)).containsExactly(1, 3, 5);
     }
 
     @Test
     void aRunThatReachesTheTipIsStillSeen() {
-        List<CutViolation> found = Rules.checkRuns(new CuttingRules().withMaxRun(2), b("142222"));
+        List<CutViolation> found = Rules.checkRuns(new CuttingRules().with(policy -> policy.maxRun(2)), b("142222"));
         assertThat(chambers(found)).containsExactly(3);
     }
 
@@ -92,16 +92,15 @@ class RulesTest {
     @Test
     void policyCanStopCaringAboutTheEnds() {
         CuttingRules rules = new CuttingRules()
-                .withMinDistinct(1)
-                .withForbidAllShallowest(false)
-                .withForbidAllDeepest(false);
+                .with(policy -> policy.minDistinct(1).forbidAllShallowest(false).forbidAllDeepest(false));
         assertThat(Rules.checkVariety(Charts.sixPinChart(), rules, b("000000"))).isEmpty();
     }
 
     @Test
     void theTipRuleIsOffUnlessPolicySetsIt() {
         assertThat(Rules.checkTip(new CuttingRules(), b("342159"))).isEmpty();
-        List<CutViolation> found = Rules.checkTip(new CuttingRules().withShallowTipLimit(6), b("342159"));
+        List<CutViolation> found =
+                Rules.checkTip(new CuttingRules().with(policy -> policy.shallowTipLimit(6)), b("342159"));
         assertThat(found.get(0).chamber()).contains(6);
         assertThat(found.get(0).facts()).isEqualTo(Map.of("depth", 9, "limit", 6));
     }
@@ -109,7 +108,8 @@ class RulesTest {
     @Test
     void theBowRuleIsOffUnlessPolicySetsIt() {
         assertThat(Rules.checkBow(new CuttingRules(), b("942156"))).isEmpty();
-        List<CutViolation> found = Rules.checkBow(new CuttingRules().withDeepBowLimit(7), b("942156"));
+        List<CutViolation> found =
+                Rules.checkBow(new CuttingRules().with(policy -> policy.deepBowLimit(7)), b("942156"));
         assertThat(Rules.reasons(found)).containsExactly("bow");
         assertThat(found.get(0).chamber()).contains(1);
         assertThat(found.get(0).facts()).isEqualTo(Map.of("depth", 9, "limit", 7));
@@ -118,13 +118,13 @@ class RulesTest {
 
     @Test
     void aBowCutExactlyAtTheLimitPasses() {
-        assertThat(Rules.checkBow(new CuttingRules().withDeepBowLimit(7), b("742156")))
+        assertThat(Rules.checkBow(new CuttingRules().with(policy -> policy.deepBowLimit(7)), b("742156")))
                 .isEmpty();
     }
 
     @Test
     void theBowRuleReadsOnlyTheFirstChamber() {
-        CuttingRules rules = new CuttingRules().withDeepBowLimit(3);
+        CuttingRules rules = new CuttingRules().with(policy -> policy.deepBowLimit(3));
         assertThat(Rules.checkBow(rules, b("249999"))).isEmpty();
         assertThat(Rules.checkTip(rules, b("942159"))).isEmpty();
     }
@@ -132,13 +132,47 @@ class RulesTest {
     @Test
     void theBowAndTipRulesAreReportedShoulderFirst() {
         List<CutViolation> found = Rules.checkCuts(
-                Charts.sixPinChart(),
-                b("942159"),
-                new CuttingRules().withDeepBowLimit(6).withShallowTipLimit(6));
+                Charts.sixPinChart(), b("942159"), new CuttingRules().with(policy -> policy.deepBowLimit(6)
+                        .shallowTipLimit(6)));
         assertThat(Rules.reasons(found)).containsExactly("bow", "tip");
         assertThat(chambers(found)).containsExactly(1, 6);
-        assertThat(Rules.isAcceptable(Charts.sixPinChart(), b("942159"), new CuttingRules().withDeepBowLimit(9)))
+        assertThat(Rules.isAcceptable(
+                        Charts.sixPinChart(), b("942159"), new CuttingRules().with(policy -> policy.deepBowLimit(9))))
                 .isTrue();
+    }
+
+    @Test
+    void theRepeatRuleCatchesWhatTheRunRuleCannotSee() {
+        CuttingRules rules = new CuttingRules().with(policy -> policy.maxRepeats(2));
+        assertThat(Rules.checkRuns(rules, b("313141"))).isEmpty();
+        List<CutViolation> found = Rules.checkRepeats(rules, b("313141"));
+        assertThat(Rules.reasons(found)).containsExactly("repeats");
+        assertThat(found.get(0).chamber()).contains(2);
+        assertThat(found.get(0).facts()).isEqualTo(Map.of("depth", 1, "count", 3, "limit", 2));
+        assertThat(found.get(0).message()).isEqualTo("depth 1 is cut in 3 chambers, policy allows 2");
+    }
+
+    @Test
+    void everyDepthOverTheRepeatLimitIsNamedShallowFirst() {
+        List<CutViolation> found =
+                Rules.checkRepeats(new CuttingRules().with(policy -> policy.maxRepeats(2)), b("535353"));
+        assertThat(found)
+                .extracting(violation -> violation.facts().get("depth"))
+                .containsExactly(3, 5);
+        assertThat(chambers(found)).containsExactly(2, 1);
+        assertThat(Rules.checkRepeats(new CuttingRules(), b("535353"))).isEmpty();
+        assertThat(Rules.checkRepeats(new CuttingRules().with(policy -> policy.maxRepeats(3)), b("535353")))
+                .isEmpty();
+    }
+
+    @Test
+    void theRepeatRuleRunsWithTheOthers() {
+        List<CutViolation> found = Rules.checkCuts(
+                Charts.sixPinChart(), b("313141"), new CuttingRules().with(policy -> policy.maxRepeats(2)));
+        assertThat(Rules.reasons(found)).containsExactly("repeats");
+        assertThat(new CuttingRules().with(policy -> policy.maxRepeats(2)).maxRepeats())
+                .contains(2);
+        assertThat(new CuttingRules().with(policy -> policy)).isEqualTo(new CuttingRules());
     }
 
     @Test
@@ -157,10 +191,9 @@ class RulesTest {
 
     @Test
     void theRulesStackUpOnOneBadKey() {
-        List<CutViolation> found = Rules.checkCuts(
-                Charts.sixPinChart(),
-                b("199999"),
-                new CuttingRules().withMaxRun(3).withShallowTipLimit(6));
+        List<CutViolation> found =
+                Rules.checkCuts(Charts.sixPinChart(), b("199999"), new CuttingRules().with(policy -> policy.maxRun(3)
+                        .shallowTipLimit(6)));
         assertThat(Rules.reasons(found)).containsExactly("macs", "run", "tip");
     }
 
@@ -185,7 +218,8 @@ class RulesTest {
 
     @Test
     void aRulesetCarriesBothHalvesTogether() {
-        RuleSet ruleset = new RuleSet(Charts.sixPinChart(), new CuttingRules().withShallowTipLimit(4));
+        RuleSet ruleset =
+                new RuleSet(Charts.sixPinChart(), new CuttingRules().with(policy -> policy.shallowTipLimit(4)));
         assertThat(ruleset.accepts(b("342154"))).isTrue();
         assertThat(Rules.reasons(ruleset.check(b("342159")))).containsExactly("tip");
     }
@@ -196,7 +230,10 @@ class RulesTest {
     }
 
     static Stream<Supplier<CuttingRules>> policyThatForbidsEveryKeyIsRefused() {
-        return Stream.of(() -> new CuttingRules().withMaxRun(0), () -> new CuttingRules().withMinDistinct(0));
+        return Stream.of(
+                () -> new CuttingRules().with(policy -> policy.maxRun(0)),
+                () -> new CuttingRules().with(policy -> policy.minDistinct(0)),
+                () -> new CuttingRules().with(policy -> policy.maxRepeats(0)));
     }
 
     @ParameterizedTest

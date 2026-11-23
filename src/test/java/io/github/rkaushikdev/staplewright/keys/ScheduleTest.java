@@ -163,7 +163,8 @@ class ScheduleTest {
         KeyingSchedule schedule = Systems.smallSchedule();
         schedule.assign(sym("AA1"), Bitting.parse("342159"));
         assertThat(schedule.problems()).isEmpty();
-        schedule.setRuleset(new RuleSet(schedule.ruleset().chart(), new CuttingRules().withShallowTipLimit(4)));
+        schedule.setRuleset(
+                new RuleSet(schedule.ruleset().chart(), new CuttingRules().with(policy -> policy.shallowTipLimit(4))));
         List<CutViolation> problems = schedule.problems();
         assertThat(problems.stream().map(CutViolation::rule).toList()).containsExactly("tip");
         assertThat(problems.get(0).message()).startsWith("AA1:");

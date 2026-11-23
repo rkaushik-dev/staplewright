@@ -146,7 +146,8 @@ class MappersKeyingTest {
         session.addAll(scheduleToRows(schedule, system));
         session.flush();
         List<ScheduleEntryRow> rows = session.all(ScheduleEntryRow.class);
-        RuleSet strict = new RuleSet(Charts.sixPinChart(), new CuttingRules().withShallowTipLimit(2));
+        RuleSet strict =
+                new RuleSet(Charts.sixPinChart(), new CuttingRules().with(policy -> policy.shallowTipLimit(2)));
         KeyingSchedule back = scheduleFromRows("chester park", strict, campusFamily(), "L", rows);
         assertThat(back.size()).isEqualTo(schedule.size());
         assertThat(back.problems()).isNotEmpty();

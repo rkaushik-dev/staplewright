@@ -8,7 +8,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 /**
  * The rules that sit on top of a chart and throw good looking keys away.
@@ -68,6 +70,33 @@ public final class Rules {
                 runDepth = current;
             }
         }
+        return List.copyOf(found);
+    }
+
+    /**
+     * Depths cut in more chambers than policy allows, anywhere on the key, shallow first.
+     *
+     * <p>The run rule only sees neighbours, so 313131 passes it with three ones and three threes.
+     * The repeat rule counts the whole key, and names the first chamber each offending depth turns
+     * up in.
+     */
+    public static List<CutViolation> checkRepeats(CuttingRules rules, Bitting bitting) {
+        if (rules.maxRepeats().isEmpty()) {
+            return List.of();
+        }
+        int limit = rules.maxRepeats().get();
+        Map<Integer, Long> counts = bitting.depths().stream()
+                .collect(Collectors.groupingBy(depth -> depth, TreeMap::new, Collectors.counting()));
+        List<CutViolation> found = new ArrayList<>();
+        counts.forEach((depth, count) -> {
+            if (count > limit) {
+                found.add(new CutViolation(
+                        "repeats",
+                        "depth " + depth + " is cut in " + count + " chambers, policy allows " + limit,
+                        Optional.of(bitting.depths().indexOf(depth) + 1),
+                        Facts.of("depth", depth, "count", count.intValue(), "limit", limit)));
+            }
+        });
         return List.copyOf(found);
     }
 
@@ -157,6 +186,7 @@ public final class Rules {
         List<CutViolation> found = new ArrayList<>();
         found.addAll(checkMacs(chart, bitting));
         found.addAll(checkRuns(rules, bitting));
+        found.addAll(checkRepeats(rules, bitting));
         found.addAll(checkVariety(chart, rules, bitting));
         found.addAll(checkBow(rules, bitting));
         found.addAll(checkTip(rules, bitting));

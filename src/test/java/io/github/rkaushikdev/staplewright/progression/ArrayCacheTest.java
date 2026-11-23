@@ -33,7 +33,7 @@ class ArrayCacheTest {
     @Test
     void theKeyCoversThePlanAndThePolicy() {
         ArrayCache.Key first = ArrayCache.cacheKey(aPlan(), new CuttingRules());
-        ArrayCache.Key second = ArrayCache.cacheKey(aPlan(), new CuttingRules().withMaxRun(1));
+        ArrayCache.Key second = ArrayCache.cacheKey(aPlan(), new CuttingRules().with(policy -> policy.maxRun(1)));
         assertThat(first).isNotEqualTo(second);
     }
 
@@ -68,22 +68,27 @@ class ArrayCacheTest {
     @Test
     void theTipRuleReachesTheKey() {
         ArrayCache.Key first = ArrayCache.cacheKey(aPlan(), new CuttingRules());
-        ArrayCache.Key second = ArrayCache.cacheKey(aPlan(), new CuttingRules().withShallowTipLimit(4));
+        ArrayCache.Key second =
+                ArrayCache.cacheKey(aPlan(), new CuttingRules().with(policy -> policy.shallowTipLimit(4)));
         assertThat(first).isNotEqualTo(second);
     }
 
     @Test
     void theBowRuleReachesTheKey() {
         ArrayCache.Key first = ArrayCache.cacheKey(aPlan(), new CuttingRules());
-        ArrayCache.Key second = ArrayCache.cacheKey(aPlan(), new CuttingRules().withDeepBowLimit(4));
+        ArrayCache.Key second = ArrayCache.cacheKey(aPlan(), new CuttingRules().with(policy -> policy.deepBowLimit(4)));
         assertThat(first).isNotEqualTo(second);
     }
 
     @Test
     void theEndOfChartRulesReachTheKey() {
         ArrayCache.Key first = ArrayCache.cacheKey(aPlan(), new CuttingRules());
-        assertThat(first).isNotEqualTo(ArrayCache.cacheKey(aPlan(), new CuttingRules().withForbidAllShallowest(false)));
-        assertThat(first).isNotEqualTo(ArrayCache.cacheKey(aPlan(), new CuttingRules().withForbidAllDeepest(false)));
+        assertThat(first)
+                .isNotEqualTo(ArrayCache.cacheKey(
+                        aPlan(), new CuttingRules().with(policy -> policy.forbidAllShallowest(false))));
+        assertThat(first)
+                .isNotEqualTo(ArrayCache.cacheKey(
+                        aPlan(), new CuttingRules().with(policy -> policy.forbidAllDeepest(false))));
     }
 
     @Test
@@ -91,7 +96,7 @@ class ArrayCacheTest {
         ArrayCache cache = new ArrayCache();
         ProgressionPlan plan = aPlan(List.of(1, 4));
         KeyBittingArray open = cache.get(plan, new CuttingRules());
-        KeyBittingArray limited = cache.get(plan, new CuttingRules().withDeepBowLimit(2));
+        KeyBittingArray limited = cache.get(plan, new CuttingRules().with(policy -> policy.deepBowLimit(2)));
         assertThat(limited).isNotSameAs(open);
         assertThat(limited.rejectionReasons()).containsKey("bow");
         assertThat(limited.usable()).isNotEmpty().allSatisfy(key -> assertThat(key.at(1))
@@ -121,7 +126,7 @@ class ArrayCacheTest {
     void aDifferentPolicyBuildsAgain() {
         ArrayCache cache = new ArrayCache();
         KeyBittingArray first = cache.get(aPlan(), new CuttingRules());
-        KeyBittingArray second = cache.get(aPlan(), new CuttingRules().withMaxRun(1));
+        KeyBittingArray second = cache.get(aPlan(), new CuttingRules().with(policy -> policy.maxRun(1)));
         assertThat(first).isNotSameAs(second);
         assertThat(cache.stats().misses()).isEqualTo(2);
     }
