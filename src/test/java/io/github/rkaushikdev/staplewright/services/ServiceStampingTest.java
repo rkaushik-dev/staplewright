@@ -178,7 +178,8 @@ class ServiceStampingTest {
 
     @Test
     void aPolicyThatStampsNothingLeavesKeysBlank() {
-        StampPolicy policy = new StampPolicy().withChangeKeys(Marking.NOTHING).withMasters(Marking.NOTHING);
+        StampPolicy policy = new StampPolicy()
+                .with(stamps -> stamps.changeKeys(Marking.NOTHING).masters(Marking.NOTHING));
         assertThat(aService(policy).blankKeys(TODAY)).hasSize(5);
     }
 
@@ -258,7 +259,7 @@ class ServiceStampingTest {
 
     @Test
     void aPolicyThatStampsNothingIsVisibleWithoutTheBook() {
-        StampPolicy policy = new StampPolicy().withChangeKeys(Marking.NOTHING);
+        StampPolicy policy = new StampPolicy().with(stamps -> stamps.changeKeys(Marking.NOTHING));
         assertThat(StampingService.unstampedOut(session, policy)).containsExactly("41207", "41208");
     }
 
