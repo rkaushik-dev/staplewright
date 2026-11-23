@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.rkaushikdev.staplewright.ConflictError;
+import io.github.rkaushikdev.staplewright.InputError;
 import io.github.rkaushikdev.staplewright.NotFoundError;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
 import java.time.LocalDate;
@@ -168,5 +169,51 @@ class QuarantineTest {
         Quarantine hold = aQuarantine();
         assertThat(hold.size()).isEqualTo(4);
         assertThat(cuts(hold)).containsExactly("302156", "342156", "362356", "382556");
+    }
+
+    @Test
+    void aRekeyThatKeptTheMasterBreakLeavesTheMissingKeyWorking() {
+        List<Bitting> rebuilt = List.of(b("322156"), b("342356"));
+        List<RetiredBitting> found = aQuarantine().stillTurning(rebuilt, TODAY);
+        assertThat(cuts(found)).containsExactly("342156");
+        assertThat(found.get(0).reason()).isSameAs(RetirementReason.COMPROMISED);
+        assertThat(found.get(0).symbol()).isEqualTo("AA1");
+        assertThat(aQuarantine().isSafeToInstall(rebuilt, TODAY)).isFalse();
+    }
+
+    @Test
+    void aRekeyThatMovedTheSharedChamberIsSafe() {
+        List<Bitting> rebuilt = List.of(b("322156"), b("352356"));
+        assertThat(aQuarantine().stillTurning(rebuilt, TODAY)).isEmpty();
+        assertThat(aQuarantine().isSafeToInstall(rebuilt, TODAY)).isTrue();
+    }
+
+    @Test
+    void aSupersededCutCountsUntilItHasSatOutItsWindow() {
+        List<Bitting> reissued = List.of(b("322156"), b("362356"));
+        assertThat(cuts(aQuarantine().stillTurning(reissued, TODAY))).containsExactly("362356");
+        assertThat(aQuarantine().stillTurning(reissued, LocalDate.of(2026, 7, 1)))
+                .isEmpty();
+    }
+
+    @Test
+    void theCutsComeBackByDayRetiredThenByCut() {
+        List<Bitting> wide = List.of(b("302156"), b("342156"), b("382556"), b("362356"));
+        assertThat(cuts(aQuarantine().stillTurning(wide, TODAY)))
+                .containsExactly("302156", "342156", "362356", "382556");
+    }
+
+    @Test
+    void aCylinderOfAnotherLengthIsNeverTurnedAndNoKeysIsRefused() {
+        assertThat(aQuarantine().stillTurning(List.of(b("34215")), TODAY)).isEmpty();
+        assertThatThrownBy(() -> aQuarantine().stillTurning(List.of(), TODAY)).isInstanceOf(InputError.class);
+    }
+
+    @Test
+    void aLeapDayRetirementWaitsForTheFirstOfMarch() {
+        RetiredBitting leap = new RetiredBitting(b("342156"), RetirementReason.SUPERSEDED, LocalDate.of(2016, 2, 29));
+        assertThat(leap.releasedBy(LocalDate.of(2023, 2, 28), 7)).isFalse();
+        assertThat(leap.releasedBy(LocalDate.of(2023, 3, 1), 7)).isTrue();
+        assertThat(leap.releasedBy(LocalDate.of(2015, 3, 1), 7)).isFalse();
     }
 }

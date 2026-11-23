@@ -4,6 +4,7 @@ import io.github.rkaushikdev.staplewright.ConflictError;
 import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.NotFoundError;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
+import io.github.rkaushikdev.staplewright.progression.Incidentals;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.Comparator;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.function.Predicate;
 import java.util.stream.StreamSupport;
 
 /**
@@ -152,18 +154,42 @@ public final class Quarantine implements Iterable<RetiredBitting> {
 
     /** The cuts out for good, by the day they were retired and then by cut. */
     public List<RetiredBitting> permanent() {
-        return retired.values().stream()
-                .filter(RetiredBitting::isPermanent)
-                .sorted(BY_DAY_THEN_CUT)
-                .toList();
+        return sortedWhere(RetiredBitting::isPermanent);
     }
 
     /** Cuts that have sat out their window and could be used again, by day retired and then by cut. */
     public List<RetiredBitting> releasable(LocalDate today) {
-        return retired.values().stream()
-                .filter(entry -> entry.releasedBy(today, releaseAfterYears))
-                .sorted(BY_DAY_THEN_CUT)
-                .toList();
+        return sortedWhere(entry -> entry.releasedBy(today, releaseAfterYears));
+    }
+
+    /**
+     * Retired cuts that would still turn a cylinder pinned for these keys, by day retired and then
+     * by cut, leaving out any that have sat out their window by today.
+     *
+     * <p>A cylinder turns for any key that carries one of its break depths in every chamber. A
+     * rekey that recuts the change key and leaves the master alone keeps the master break in every
+     * chamber, so the missing key still opens the door wherever it shared the master cut and the new
+     * key covers the rest. Nobody notices, because the new key works and the old one is in a pocket
+     * in another state. This is the check that catches it before the cylinder goes back in the door.
+     *
+     * @param keys every key the rebuilt cylinder is pinned for, masters included
+     * @throws InputError for no keys, or keys of different lengths
+     */
+    public List<RetiredBitting> stillTurning(List<Bitting> keys, LocalDate today) {
+        Map<Integer, List<Integer>> breaks = Incidentals.breakDepths(keys);
+        return sortedWhere(entry -> !entry.releasedBy(today, releaseAfterYears)
+                && entry.bitting().chambers() == breaks.size()
+                && breaks.entrySet().stream().allMatch(chamber -> chamber.getValue()
+                        .contains(entry.bitting().at(chamber.getKey()))));
+    }
+
+    /** Whether no retired cut still in quarantine today turns a cylinder pinned for these keys. */
+    public boolean isSafeToInstall(List<Bitting> keys, LocalDate today) {
+        return stillTurning(keys, today).isEmpty();
+    }
+
+    private List<RetiredBitting> sortedWhere(Predicate<RetiredBitting> keep) {
+        return retired.values().stream().filter(keep).sorted(BY_DAY_THEN_CUT).toList();
     }
 
     /** How many cuts are out for each reason, keyed by the reason as written, in reason order. */
