@@ -6,6 +6,7 @@ import io.github.rkaushikdev.staplewright.SpecificationError;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.TreeSet;
 import java.util.stream.IntStream;
 
@@ -131,21 +132,32 @@ public record DepthAndSpaceChart(
      * cut, and the shop wants to hear about it rather than get a plausible answer.
      */
     public int depthForDimension(int mils) {
-        Integer best = null;
+        return nearestDepth(mils)
+                .orElseThrow(() -> new BittingError(
+                        "that measurement is not near any depth on the chart",
+                        Facts.of("mils", mils, "family", family, "tolerance", depthToleranceMils)));
+    }
+
+    /**
+     * The one published depth a measurement reads as, or nothing.
+     *
+     * <p>Nothing for a measurement further than the tolerance from every depth, and nothing for one
+     * exactly as near two depths as each other. A wide tolerance on a fine increment makes that
+     * possible, and a reading that could be either cut is not a reading.
+     */
+    public Optional<Integer> nearestDepth(int mils) {
+        List<Integer> nearest = List.of();
         int bestGap = depthToleranceMils + 1;
         for (int depth : depths) {
             int gap = Math.abs(dimensionFor(depth) - mils);
             if (gap < bestGap) {
-                best = depth;
+                nearest = List.of(depth);
                 bestGap = gap;
+            } else if (gap == bestGap) {
+                nearest = List.of(nearest.get(0), depth);
             }
         }
-        if (best == null) {
-            throw new BittingError(
-                    "that measurement is not near any depth on the chart",
-                    Facts.of("mils", mils, "family", family, "tolerance", depthToleranceMils));
-        }
-        return best;
+        return nearest.size() == 1 ? Optional.of(nearest.get(0)) : Optional.empty();
     }
 
     /** How far along the blade a chamber sits, in mils from the gauge. */

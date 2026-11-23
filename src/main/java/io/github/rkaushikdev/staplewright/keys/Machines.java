@@ -4,6 +4,7 @@ import io.github.rkaushikdev.staplewright.BittingError;
 import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.InputError;
 import io.github.rkaushikdev.staplewright.spec.DepthAndSpaceChart;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -58,12 +59,25 @@ public final class Machines {
      * @throws BittingError for a cut nowhere near a published depth
      */
     public static Bitting measure(DepthAndSpaceChart chart, List<Integer> dimensions) {
+        requireLength(chart, dimensions);
+        List<Integer> depths = new ArrayList<>();
+        for (int chamber = 1; chamber <= dimensions.size(); chamber++) {
+            int at = chamber;
+            int mils = dimensions.get(chamber - 1);
+            depths.add(chart.nearestDepth(mils)
+                    .orElseThrow(() -> new BittingError(
+                            "that measurement does not read as one depth on the chart",
+                            Facts.of("chamber", at, "mils", mils, "family", chart.family()))));
+        }
+        return new Bitting(depths);
+    }
+
+    private static void requireLength(DepthAndSpaceChart chart, List<Integer> dimensions) {
         if (dimensions.size() != chart.chambers()) {
             throw new InputError(
                     "that is not a key from this family",
                     Facts.of("chambers", chart.chambers(), "got", dimensions.size()));
         }
-        return new Bitting(dimensions.stream().map(chart::depthForDimension).toList());
     }
 
     /**
@@ -85,9 +99,7 @@ public final class Machines {
      * pretending otherwise. A key cut true has no drift either.
      */
     public static Optional<Integer> drift(DepthAndSpaceChart chart, Bitting wanted, List<Integer> dimensions) {
-        if (dimensions.size() != chart.chambers()) {
-            throw new InputError("that is not a key from this family", Facts.of("chambers", chart.chambers()));
-        }
+        requireLength(chart, dimensions);
         Set<Integer> errors = IntStream.rangeClosed(1, dimensions.size())
                 .mapToObj(chamber -> dimensions.get(chamber - 1) - chart.dimensionFor(wanted.at(chamber)))
                 .collect(Collectors.toSet());
@@ -122,11 +134,7 @@ public final class Machines {
 
     /** Whether every cut on a key is near enough to a published depth. */
     public static boolean withinTolerance(DepthAndSpaceChart chart, List<Integer> dimensions) {
-        try {
-            measure(chart, dimensions);
-            return true;
-        } catch (BittingError | InputError refused) {
-            return false;
-        }
+        return dimensions.size() == chart.chambers()
+                && dimensions.stream().allMatch(mils -> chart.nearestDepth(mils).isPresent());
     }
 }

@@ -105,6 +105,19 @@ class MachineTest {
     }
 
     @Test
+    void aRefusedMeasurementNamesItsChamber() {
+        assertThatThrownBy(() -> Machines.measure(Charts.sixPinChart(), List.of(335, 320, 305, 312, 260, 245)))
+                .isInstanceOf(BittingError.class)
+                .satisfies(refused -> assertThat(((BittingError) refused).facts())
+                        .containsEntry("chamber", 4)
+                        .containsEntry("mils", 312));
+        assertThat(Machines.withinTolerance(Charts.sixPinChart(), List.of(335, 320, 305, 312, 260, 245)))
+                .isFalse();
+        assertThat(Machines.withinTolerance(Charts.sixPinChart(), List.of(335, 320)))
+                .isFalse();
+    }
+
+    @Test
     void aGoodKeyVerifiesClean() {
         assertThat(Machines.verify(Charts.sixPinChart(), b("342156"), dimensionsFor("342156")))
                 .isEmpty();
