@@ -4,15 +4,19 @@ import io.github.rkaushikdev.staplewright.ConflictError;
 import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.NotFoundError;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
+import io.github.rkaushikdev.staplewright.keys.KeyingSchedule;
+import io.github.rkaushikdev.staplewright.progression.Finding;
+import io.github.rkaushikdev.staplewright.progression.Groups;
 import io.github.rkaushikdev.staplewright.progression.Incidentals;
+import io.github.rkaushikdev.staplewright.progression.KeyingGroup;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.TreeMap;
 import java.util.function.Predicate;
 import java.util.stream.StreamSupport;
@@ -138,17 +142,15 @@ public final class Quarantine implements Iterable<RetiredBitting> {
 
     /** A run of candidate cuts with every retired one dropped, in the order given. */
     public List<Bitting> available(Iterable<Bitting> bittings) {
-        return available(bittings, Optional.empty());
+        return StreamSupport.stream(bittings.spliterator(), false)
+                .filter(bitting -> !isRetired(bitting))
+                .toList();
     }
 
     /** A run of candidate cuts with the ones still refused today dropped, in the order given. */
     public List<Bitting> available(Iterable<Bitting> bittings, LocalDate today) {
-        return available(bittings, Optional.of(today));
-    }
-
-    private List<Bitting> available(Iterable<Bitting> bittings, Optional<LocalDate> today) {
         return StreamSupport.stream(bittings.spliterator(), false)
-                .filter(bitting -> today.isPresent() ? !isRetired(bitting, today.get()) : !isRetired(bitting))
+                .filter(bitting -> !isRetired(bitting, today))
                 .toList();
     }
 
@@ -181,6 +183,36 @@ public final class Quarantine implements Iterable<RetiredBitting> {
                 && entry.bitting().chambers() == breaks.size()
                 && breaks.entrySet().stream().allMatch(chamber -> chamber.getValue()
                         .contains(entry.bitting().at(chamber.getKey()))));
+    }
+
+    /**
+     * Every keying group on a schedule whose cylinder a retired cut would still turn, one finding a
+     * cut, in the order the groups are given and then by day retired.
+     *
+     * <p>The finding grades are the schedule review's, not an incident's. A compromised cut turning a cylinder stops the job, because the rekey has not done the one
+     * thing it was for. A superseded cut that still turns one is serious rather than blocking: the
+     * key is somewhere the shop put it, not somewhere it lost it. A group is judged on the keys in it
+     * that are cut so far.
+     */
+    public List<Finding> stillTurningGroups(KeyingSchedule schedule, List<KeyingGroup> groups, LocalDate today) {
+        List<Finding> found = new ArrayList<>();
+        for (KeyingGroup group : groups) {
+            List<Bitting> keys = Groups.cutSoFar(schedule, group);
+            if (keys.isEmpty()) {
+                continue;
+            }
+            for (RetiredBitting entry : stillTurning(keys, today)) {
+                found.add(new Finding(
+                        "retired_cut_turns",
+                        entry.isPermanent()
+                                ? io.github.rkaushikdev.staplewright.progression.Severity.BLOCKING
+                                : io.github.rkaushikdev.staplewright.progression.Severity.SERIOUS,
+                        "group " + group.name() + " still turns for "
+                                + entry.bitting().render() + ", retired "
+                                + entry.reason().value() + " on " + entry.retiredOn()));
+            }
+        }
+        return List.copyOf(found);
     }
 
     /** Whether no retired cut still in quarantine today turns a cylinder pinned for these keys. */

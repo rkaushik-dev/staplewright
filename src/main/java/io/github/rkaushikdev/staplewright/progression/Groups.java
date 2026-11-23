@@ -48,6 +48,17 @@ public final class Groups {
         return List.copyOf(found);
     }
 
+    /**
+     * What the keys in a group are cut to so far, in the group's order, leaving out any symbol not
+     * yet cut or not on the schedule at all.
+     */
+    public static List<Bitting> cutSoFar(KeyingSchedule schedule, KeyingGroup group) {
+        return group.ordered().stream()
+                .filter(schedule::contains)
+                .flatMap(symbol -> schedule.bittingOf(symbol).stream())
+                .toList();
+    }
+
     /** Every keyway section the group's keys are cut on, once each, in code order. */
     public static List<String> sectionsFor(KeyingSchedule schedule, KeyingGroup group) {
         return List.copyOf(group.symbols().stream()

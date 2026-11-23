@@ -160,10 +160,7 @@ public final class Validation {
     public static List<Finding> crowdedChambers(KeyingSchedule schedule, List<KeyingGroup> groups, int mostWafers) {
         List<Finding> found = new ArrayList<>();
         for (KeyingGroup group : groups) {
-            List<Bitting> keys = group.ordered().stream()
-                    .filter(schedule::contains)
-                    .flatMap(symbol -> schedule.bittingOf(symbol).stream())
-                    .toList();
+            List<Bitting> keys = Groups.cutSoFar(schedule, group);
             if (keys.isEmpty()) {
                 continue;
             }

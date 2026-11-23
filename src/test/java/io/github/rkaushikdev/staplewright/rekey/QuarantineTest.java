@@ -7,6 +7,11 @@ import io.github.rkaushikdev.staplewright.ConflictError;
 import io.github.rkaushikdev.staplewright.InputError;
 import io.github.rkaushikdev.staplewright.NotFoundError;
 import io.github.rkaushikdev.staplewright.keys.Bitting;
+import io.github.rkaushikdev.staplewright.keys.KeySymbol;
+import io.github.rkaushikdev.staplewright.keys.KeyingSchedule;
+import io.github.rkaushikdev.staplewright.progression.Finding;
+import io.github.rkaushikdev.staplewright.progression.KeyingGroup;
+import io.github.rkaushikdev.staplewright.support.Systems;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -215,5 +220,45 @@ class QuarantineTest {
         assertThat(leap.releasedBy(LocalDate.of(2023, 2, 28), 7)).isFalse();
         assertThat(leap.releasedBy(LocalDate.of(2023, 3, 1), 7)).isTrue();
         assertThat(leap.releasedBy(LocalDate.of(2015, 3, 1), 7)).isFalse();
+    }
+
+    /** The small campus schedule with the master and two change keys cut for one group. */
+    private static KeyingSchedule aRekeyedSchedule(String changeKey) {
+        KeyingSchedule schedule = Systems.smallSchedule();
+        schedule.assign(KeySymbol.parse("AA"), b("322156"));
+        schedule.assign(KeySymbol.parse("AA1"), b(changeKey));
+        return schedule;
+    }
+
+    private static KeyingGroup office() {
+        return new KeyingGroup("office 214", List.of(KeySymbol.parse("AA"), KeySymbol.parse("AA1")));
+    }
+
+    @Test
+    void aGroupACompromisedCutStillTurnsStopsTheJob() {
+        List<Finding> found = aQuarantine().stillTurningGroups(aRekeyedSchedule("342356"), List.of(office()), TODAY);
+        assertThat(found).hasSize(1);
+        assertThat(found.get(0).code()).isEqualTo("retired_cut_turns");
+        assertThat(found.get(0).severity()).isSameAs(io.github.rkaushikdev.staplewright.progression.Severity.BLOCKING);
+        assertThat(found.get(0).message())
+                .isEqualTo("group office 214 still turns for 342156, retired compromised on 2018-06-14");
+    }
+
+    @Test
+    void aSupersededCutStillTurningIsSeriousAndARekeyedGroupIsQuiet() {
+        List<Finding> found = aQuarantine().stillTurningGroups(aRekeyedSchedule("362356"), List.of(office()), TODAY);
+        assertThat(found)
+                .extracting(Finding::severity)
+                .containsExactly(io.github.rkaushikdev.staplewright.progression.Severity.SERIOUS);
+        assertThat(aQuarantine().stillTurningGroups(aRekeyedSchedule("352356"), List.of(office()), TODAY))
+                .isEmpty();
+    }
+
+    @Test
+    void aGroupWithNothingCutYetHasNothingToSay() {
+        assertThat(aQuarantine().stillTurningGroups(Systems.smallSchedule(), List.of(office()), TODAY))
+                .isEmpty();
+        assertThat(aQuarantine().available(List.of(b("342156"), b("352356")), TODAY))
+                .containsExactly(b("352356"));
     }
 }
