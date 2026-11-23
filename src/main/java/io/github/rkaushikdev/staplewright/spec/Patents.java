@@ -2,14 +2,15 @@ package io.github.rkaushikdev.staplewright.spec;
 
 import io.github.rkaushikdev.staplewright.Facts;
 import io.github.rkaushikdev.staplewright.KeywayError;
+import java.time.DateTimeException;
 import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
 
@@ -36,7 +37,20 @@ public final class Patents {
     /** How many years a system planned today takes to land. */
     public static final int PLANNING_YEARS = 5;
 
-    private static final Pattern ISO_DAY = Pattern.compile("[0-9]{4}-[0-9]{2}-[0-9]{2}");
+    /** A utility patent runs twenty years from the day it was filed. */
+    public static final int UTILITY_TERM_YEARS = 20;
+
+    /** A design patent granted from the day the longer term began runs fifteen years from grant. */
+    public static final int DESIGN_TERM_YEARS = 15;
+
+    /** What a design patent granted before the longer term began runs for, from grant. */
+    public static final int OLD_DESIGN_TERM_YEARS = 14;
+
+    /** The first day a design patent carried the fifteen year term. */
+    public static final LocalDate DESIGN_TERM_CHANGED = LocalDate.of(2015, 5, 13);
+
+    private static final Pattern WRITTEN =
+            Pattern.compile("(?:(filed|design granted) )?([0-9]{4})-([0-9]{2})-([0-9]{2})");
 
     private static final Comparator<Exposure> SOONEST_FIRST = Comparator.comparing(
                     (Exposure item) -> item.expiresOn().orElse(LocalDate.MAX))
@@ -45,35 +59,50 @@ public final class Patents {
     private Patents() {}
 
     /**
-     * The date off the section, or nothing if it never carried one.
+     * The day the patent on the section runs out, or nothing if it never carried one.
      *
      * <p>The catalogue prints these as plain days, {@code 2027-02-14}, and the section keeps them as
-     * text, because a chart is a document before it is a data structure. Reading them lives here so
-     * a malformed date is one error in one place rather than a surprise in the middle of a report.
+     * text, because a chart is a document before it is a data structure. Older catalogues print the
+     * patent instead of its end, and the term is the statute's: {@code filed 2009-04-02} is a utility
+     * patent and runs twenty years from filing, and {@code design granted 2016-03-01} is a design
+     * patent and runs fifteen years from grant, or fourteen if it was granted before 13 May 2015.
+     * Reading them lives here so a malformed date is one error in one place rather than a surprise
+     * in the middle of a report.
      *
      * @throws KeywayError for a date nobody can read
      */
     public static Optional<LocalDate> expiryOf(KeywaySection section) {
-        if (section.patentExpires().isEmpty()) {
-            return Optional.empty();
-        }
-        String written = section.patentExpires().get();
-        return Optional.of(readDay(written)
+        return section.patentExpires().map(written -> readExpiry(written)
                 .orElseThrow(() -> new KeywayError(
                         "that section has a patent date nobody can read",
                         Facts.of("section", section.code(), "written", written))));
     }
 
-    private static Optional<LocalDate> readDay(String written) {
-        if (!ISO_DAY.matcher(written).matches()) {
+    private static Optional<LocalDate> readExpiry(String written) {
+        Matcher parts = WRITTEN.matcher(written);
+        if (!parts.matches()) {
             return Optional.empty();
         }
+        LocalDate day;
         try {
-            LocalDate day = LocalDate.parse(written);
-            return day.getYear() < 1 ? Optional.empty() : Optional.of(day);
-        } catch (DateTimeParseException unreadable) {
+            day = LocalDate.of(
+                    Integer.parseInt(parts.group(2)),
+                    Integer.parseInt(parts.group(3)),
+                    Integer.parseInt(parts.group(4)));
+        } catch (DateTimeException unreadable) {
             return Optional.empty();
         }
+        if (day.getYear() < 1) {
+            return Optional.empty();
+        }
+        String basis = parts.group(1) == null ? "" : parts.group(1);
+        return Optional.of(
+                switch (basis) {
+                    case "filed" -> day.plusYears(UTILITY_TERM_YEARS);
+                    case "design granted" ->
+                        day.plusYears(day.isBefore(DESIGN_TERM_CHANGED) ? OLD_DESIGN_TERM_YEARS : DESIGN_TERM_YEARS);
+                    default -> day;
+                });
     }
 
     /** Where one section stands. */

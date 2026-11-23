@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PatentsTest {
 
@@ -46,6 +48,39 @@ class PatentsTest {
     void aDateTheCataloguePrintedComesBackAsADay() {
         KeywaySection section = dated("CE", "2027-02-14");
         assertThat(Patents.expiryOf(section)).contains(LocalDate.of(2027, 2, 14));
+    }
+
+    @Test
+    void aUtilityPatentRunsTwentyYearsFromFiling() {
+        assertThat(Patents.expiryOf(dated("CE", "filed 2009-04-02"))).contains(LocalDate.of(2029, 4, 2));
+        assertThat(Patents.expiryOf(dated("CE", "filed 2008-02-29"))).contains(LocalDate.of(2028, 2, 29));
+    }
+
+    @Test
+    void aDesignPatentRunsFifteenYearsFromGrantOnceTheLongerTermBegan() {
+        assertThat(Patents.expiryOf(dated("CE", "design granted 2016-03-01"))).contains(LocalDate.of(2031, 3, 1));
+        assertThat(Patents.expiryOf(dated("CE", "design granted 2015-05-13"))).contains(LocalDate.of(2030, 5, 13));
+        assertThat(Patents.expiryOf(dated("CE", "design granted 2016-02-29"))).contains(LocalDate.of(2031, 2, 28));
+    }
+
+    @Test
+    void aDesignPatentGrantedBeforeTheChangeRunsFourteen() {
+        assertThat(Patents.expiryOf(dated("CE", "design granted 2015-05-12"))).contains(LocalDate.of(2029, 5, 12));
+    }
+
+    @Test
+    void aFilingDateDecidesWhetherTheSectionIsStillRestricted() {
+        Exposure item = Patents.exposureOf(new KeywaySection("CE", "Schlage", true, Optional.of("filed 2004-06-30")));
+        assertThat(item.isOpen(LocalDate.of(2024, 6, 29))).isFalse();
+        assertThat(item.isOpen(LocalDate.of(2024, 6, 30))).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {"filed 2009-02-30", "granted 2016-03-01", "design 2016-03-01", "filed  2009-04-02", "0000-01-01"
+            })
+    void aPatentNobodyCanReadIsAnError(String written) {
+        assertThatThrownBy(() -> Patents.expiryOf(dated("CE", written))).isInstanceOf(KeywayError.class);
     }
 
     @Test
